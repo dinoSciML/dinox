@@ -2,6 +2,7 @@
 
 import sys, os
 import numpy as np
+from opt_einsum import contract
 
 ################################################################################
 import argparse 
@@ -20,12 +21,6 @@ file_to_reduce = 'mq_data.npz'
 full_data = np.load(args.data_dir+file_to_reduce)
 m_data = full_data['m_data']
 u_data = full_data['q_data']
-
-# Load the Jacobian data
-if args.J_data:
-	all_J_data = np.load(args.data_dir+'JstarPhi_data.npz')
-	J_data = np.transpose(all_J_data['JstarPhi_data'],(0,2,1))
-
 ################################################################################
 # Reduce the input data
 # Load the projectors
@@ -38,28 +33,20 @@ elif args.input_basis.lower() == 'as':
 else:
 	raise
 
-input_projector = np.load(args.rb_dir + input_projector_file)
-reduced_m_data = np.einsum('mr,dm->dr',input_projector,m_data)
+reduced_m_data = contract('mr,dm->dr',np.load(args.rb_dir + input_projector_file),m_data)
 
-if args.J_data:
-	input_basis = np.load(args.rb_dir+input_basis_file)
-	reduced_J_data = np.einsum('mr,dum->dur',input_basis,J_data)
-
+if args.J_data:	
+	#  Load the Jacobian data
+	reduced_J_data = contract('dmu,mr->dur',np.load(args.data_dir+'JstarPhi_data.npz')['JstarPhi_data'],np.load(args.rb_dir+input_basis_file))
 
 if 'full_state' in args.data_dir:
 	if args.output_basis.lower() == 'pod':
 		output_projector_file = 'POD_projector.npy'
 	else:
 		raise
-
-		output_projector = np.load(args.rb_dir + output_projector_file)
-
-	reduced_u_data = np.einsum('ur,du->dr',output_projector,u_data)
-
+	reduced_u_data = contract('ur,du->dr',np.load(args.rb_dir + output_projector_file),u_data)
 else:
 	reduced_u_data = u_data
-
-
 
 reduced_file_name = file_to_reduce.split('.npz')[0]+'_reduced.npz'
 
