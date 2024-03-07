@@ -51,9 +51,14 @@ else:
 reduced_file_name = file_to_reduce.split('.npz')[0]+'_reduced.npz'
 
 if args.J_data:
-	np.savez(args.data_dir+reduced_file_name, m_data=reduced_m_data,q_data=reduced_u_data,\
+	np.savez(args.data_dir+"m_data.npy", reduced_m_data,q_data=reduced_u_data,\
 												J_data = reduced_J_data)
+	#save individual np files for new dino_training data approach (direct to GPU)
+	np.save(args.data_dir+"m_data.npy", reduced_m_data)
+	np.save(args.data_dir+"q_data.npy", reduced_u_data)
+	np.save(args.data_dir+"J_data.npy", reduced_J_data)
 else:
 	np.savez(args.data_dir+reduced_file_name, m_data=reduced_m_data,q_data=reduced_u_data)
-
+	np.save(args.data_dir+"m_data.npy", reduced_m_data)
+	np.save(args.data_dir+"q_data.npy", reduced_u_data)
 print('Successfully reduced the data.')
