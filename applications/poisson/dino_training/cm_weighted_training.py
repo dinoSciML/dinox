@@ -165,8 +165,9 @@ m_train = m_remaining[:n_train]
 q_train = q_remaining[:n_train]
 PhiTJ_train = PhiTJ_remaining[:n_train]
 
-train_dict = {'m_data':m_train,'q_data':q_train, 'J_data':PhiTJ_train}
-test_dict = {'m_data': m_test, 'q_data': q_test, 'J_data':PhiTJ_test}
+# TODO: remove these dicts, only keep data, stored in jax arrays
+# train_dict = {'m_data':m_train,'q_data':q_train, 'J_data':PhiTJ_train}
+# test_dict = {'m_data': m_test, 'q_data': q_test, 'J_data':PhiTJ_test}
 
 
 ################################################################################
@@ -213,15 +214,17 @@ projector_dict['last_layer_bias'] = np.mean(train_dict['q_data'],axis = 0)
 
 # 	# Prune the data here:
 # 	# First m->m_r = \Psi^*m = (RV_r)^Tm
-# 	train_dict['m_full'] = np.copy(train_dict['m_data'])
-# 	train_dict['m_data'] = np.einsum('mr,dm->dr',input_projector,train_dict['m_data'])
-# 	test_dict['m_full'] = np.copy(test_dict['m_data'])
-# 	test_dict['m_data'] = np.einsum('mr,dm->dr',input_projector,test_dict['m_data'])
+	#TODO: just laod these directly from file (they've already been computed in reduce_data.py. todo later, merge reduce_data and cm_weighted_training)
+
+	train_dict['m_full'] = 
+	train_dict['m_data'] = #
+	test_dict['m_full'] = 
+	test_dict['m_data'] = 
 # 	# Second reduce the Jacobian data using the basis (not projector)
-# 	train_dict['J_full'] = np.copy(train_dict['J_data'])
-# 	train_dict['J_data'] = np.einsum('mr,dqm->dqr',input_basis,train_dict['J_data'])
-# 	test_dict['J_full'] = np.copy(test_dict['J_data'])
-# 	test_dict['J_data'] = np.einsum('mr,dqm->dqr',input_basis,test_dict['J_data'])
+	train_dict['J_full'] = 
+	train_dict['J_data'] = 
+	test_dict['J_full'] = 
+	test_dict['J_data'] = 
 
 
 #TODO: Reimplement below, setup_the_dino, train_dino, and restitch_and_postprocess

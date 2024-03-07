@@ -121,7 +121,7 @@ elif args.basis_type.lower() == 'as':
 
 	m_data = all_data['m_data'][:args.ndata]
 	q_data = all_data['q_data'][:args.ndata]
-	PhiTJ_data = np.transpose(JTPhi_data['JstarPhi_data'], (0,2,1))[:args.ndata]
+	PhiTJ_data = np.transpose(JTPhi_data['JstarPhi_data'], (0,2,1))[:args.ndata] #TODO, remove need to transpose!
 
 	print('m_data.shape = ',m_data.shape)
 	print('q_data.shape = ',q_data.shape)
@@ -132,6 +132,12 @@ elif args.basis_type.lower() == 'as':
 	# Instance JTJ operator 
 	print('Loading JTJ')
 	JTJ_operator = hf.MeanJTJfromDataOperator(PhiTJ_data,prior)
+	#TODO: Redo JTJ with opt_einsum.constract??? (contract('ijk,jl,ilk->ik',self.J, self.noise_cov_inv,self.J,X_np))???
+		# X_np = np.tile(x_np,(self.ndata,1))
+		# JTJX_np = np.einsum('abc,bd,eda,ea->ac',self.J,self.noise_cov_inv, self.J,X_np)# -> k, but make J[0] divided by number len(J[0]?)
+		# y.set_local(np.mean(JTJX_np,axis = 0))
+
+
 	# Set up the Gaussian random
 	m_vector = dl.Vector()
 	JTJ_operator.init_vector_lambda(m_vector,0)
@@ -140,7 +146,7 @@ elif args.basis_type.lower() == 'as':
 
 	t0 = time.time()
 	print('Beginning doublePassG')
-	if hasattr(prior, "R"):
+	if hasattr(prior, "R"): #TODO: check if the JTJ action can be sped up by creating a Omega Matrix, rather than Multivector (since here J.T J is dense actions)
 		d_GN, V_GN = hp.doublePassG(JTJ_operator,\
 			prior.R, prior.Rsolver, Omega,rank,s=1)
 	else:
@@ -154,7 +160,7 @@ elif args.basis_type.lower() == 'as':
 	# Compute the projector RV_r from the basis
 	RV_GN = hp.MultiVector(V_GN[0],V_GN.nvec())
 	RV_GN.zero()
-	hp.MatMvMult(prior.R,V_GN,RV_GN)
+	hp.MatMvMult(prior.R,V_GN,RV_GN) #R is C^-1
 
 	input_projector = hf.mv_to_dense(RV_GN)
 
