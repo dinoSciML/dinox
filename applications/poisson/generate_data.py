@@ -15,6 +15,8 @@ from poisson_model import *
 
 formulation = 'pointwise'
 
+import time
+start = time.time()
 assert formulation.lower() in ['full_state', 'pointwise']
 
 settings = poisson_settings()
@@ -51,3 +53,5 @@ nsamples = 1000
 data_dir = 'data/'+formulation+'/'
 
 dataGenerator.generate(nsamples, derivatives = (1,0),output_basis = output_basis, data_dir = data_dir)
+
+print("total_time: ", time.time()-start)

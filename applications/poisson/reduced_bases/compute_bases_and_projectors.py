@@ -25,7 +25,7 @@ from poisson_model import *
 import argparse 
 parser = argparse.ArgumentParser()
 parser.add_argument('-data_dir', '--data_dir', type=str, default='../data/pointwise/', help="Where to save")
-parser.add_argument('-basis_type', '--basis_type', type=str, default='kle', help="pod as or kle")
+parser.add_argument('-basis_type', '--basis_type', type=str, default='as', help="pod, as or kle")
 parser.add_argument('-rank', '--rank', type=int, default=400, help="Active subspace rank")
 parser.add_argument('-oversample', '--oversample', type=int, default=10, help="Active subspace oversample")
 parser.add_argument('-ndata', '--ndata', type=int, default=800, help="Number of samples")
@@ -42,14 +42,18 @@ oversample = args.oversample
 
 ################################################################################
 # Set up the model
+import time
 
+start = time.time()
+start0 = start
 settings = poisson_settings()
 model = poisson_model(settings)
 
 Vh = model.problem.Vh
 
+#Only NEED TO LOAD THE PRIOR R csr_matrix!
 prior = model.prior
-
+print("time to load prior:", time.time()-start)
 assert dl.MPI.comm_world.size == 1, print('Not thought out in other cases yet')
 
 
@@ -116,44 +120,73 @@ elif args.basis_type.lower() == 'as':
 
 	data_dir = args.data_dir
 	all_data = np.load(data_dir+'mq_data.npz')
-	all_data = np.load(data_dir+'mq_data.npz')
-	JTPhi_data = np.load(data_dir+'JstarPhi_data.npz')
+	# all_data = np.load(data_dir+'mq_data.npz')
+	JTPhi_data = np.load(data_dir+'JstarPhi_data.npz')['JstarPhi_data'][:args.ndata]
 
 	m_data = all_data['m_data'][:args.ndata]
 	q_data = all_data['q_data'][:args.ndata]
-	PhiTJ_data = np.transpose(JTPhi_data['JstarPhi_data'], (0,2,1))[:args.ndata] #TODO, remove need to transpose!
+	# PhiTJ_data = np.transpose(JTPhi_data['JstarPhi_data'], (0,2,1))[:args.ndata] #TODO, remove need to transpose!
 
 	print('m_data.shape = ',m_data.shape)
 	print('q_data.shape = ',q_data.shape)
-	print('PhiTJ_data.shape = ',PhiTJ_data.shape)
+	print('PhiTJ_data.shape = ',JTPhi_data.shape)
 
 
 	################################################################################
 	# Instance JTJ operator 
-	print('Loading JTJ')
-	JTJ_operator = hf.MeanJTJfromDataOperator(PhiTJ_data,prior)
-	#TODO: Redo JTJ with opt_einsum.constract??? (contract('ijk,jl,ilk->ik',self.J, self.noise_cov_inv,self.J,X_np))???
-		# X_np = np.tile(x_np,(self.ndata,1))
-		# JTJX_np = np.einsum('abc,bd,eda,ea->ac',self.J,self.noise_cov_inv, self.J,X_np)# -> k, but make J[0] divided by number len(J[0]?)
-		# y.set_local(np.mean(JTJX_np,axis = 0))
-
-
-	# Set up the Gaussian random
-	m_vector = dl.Vector()
-	JTJ_operator.init_vector_lambda(m_vector,0)
-	Omega = hp.MultiVector(m_vector,rank+oversample)
-	hp.parRandom.normal(1.,Omega)
-
+	# print('Loading JTJ')
+	new_approach = True
 	t0 = time.time()
-	print('Beginning doublePassG')
-	if hasattr(prior, "R"): #TODO: check if the JTJ action can be sped up by creating a Omega Matrix, rather than Multivector (since here J.T J is dense actions)
-		d_GN, V_GN = hp.doublePassG(JTJ_operator,\
-			prior.R, prior.Rsolver, Omega,rank,s=1)
+	if not new_approach:
+		PhiTJ_data = np.transpose(JTPhi_data, (0,2,1))
+		JTJ_operator = hf.MeanJTJfromDataOperator(PhiTJ_data, prior)
+		# Set up the Gaussian random
+		m_vector = dl.Vector()
+		JTJ_operator.init_vector_lambda(m_vector,0)
+		Omega = hp.MultiVector(m_vector,rank+oversample)
+		hp.parRandom.normal(1.,Omega)
+	
 	else:
-		d_GN, V_GN = hp.doublePassG(JTJ_operator,\
-			prior.Hlr, prior.Hlr, Omega,rank,s=1)
+		dM = m_data.shape[1]
+		OmegaNumpy = np.random.normal(size=(dM, rank+oversample))
+		Mcsr, sqrtMcsr, A_csr, mean = prior._get_parameters()
+		print("Creating R sparse, only do once, for all time, save to disk, maybe just load from disk")
+		start = time.time()
+		# R_sparse =  A_csr.T@scipy.sparse.linalg.spsolve(Mcsr.tocsc(),A_csr.tocsc())
+		# print("forming R sparse time", time.time()-start)
+		# print(type(R_sparse))
+		Minv = spla.inv(Mcsr)
+		print("forming M_inv sparse time (will be loading from disk instead)", time.time()-start)
 
-	print('doublePassG took ',time.time() - t0,'s')
+		# print(np.linalg.norm(Minv@Mcsr - np.eye(dM)))
+		# start = time.time()
+		R_sparse =  A_csr.T@Minv@A_csr
+		#M_inv is of the order of the same size as 
+		print("forming R sparse time, will just load from disk isnead", time.time()-start)
+		# print(Minv.nnz, dM*dM, R_sparse.nnz)
+
+
+		# A_csr.T@scipy.sparse.linalg.spsolve(Mcsr@A_csr
+		# R_sparse_action 
+		if False:
+			R_sparse_or_dense = R_dense
+		else:
+			R_sparse_or_dense = R_sparse
+
+	print('Beginning doublePassG')
+
+	if hasattr(prior, "R"): #TODO: check if the JTJ action can be sped up by creating a Omega numpy Matrix, rather than Multivector (since here J.T J is dense actions)
+		if new_approach:
+			d_GN, V_GN = hp.doublePassGAATNumpy(JTPhi_data,prior.R, prior, 
+				R_sparse_or_dense, OmegaNumpy,rank,s=1)
+		else:
+			d_GN, V_GN = hp.doublePassG(JTJ_operator,prior.R, prior.Rsolver, Omega,rank,s=1)
+	else:
+		raise
+		# d_GN, V_GN = hp.doublePassGAATNumpy(JTJ_operator,\
+		# 	prior.Hlr, prior.Hlr, OmegaNumpy,rank,s=1)
+
+	print('doublePassGAATNumpy took ',time.time() - t0,'s')
 
 	input_basis = hf.mv_to_dense(V_GN)
 
@@ -163,6 +196,7 @@ elif args.basis_type.lower() == 'as':
 	hp.MatMvMult(prior.R,V_GN,RV_GN) #R is C^-1
 
 	input_projector = hf.mv_to_dense(RV_GN)
+	#dense_to_mv
 
 	check_orth = True
 	if check_orth:
@@ -189,6 +223,7 @@ else:
 
 
 
+print("Total runtime:", time.time()-start0)
 
 
 

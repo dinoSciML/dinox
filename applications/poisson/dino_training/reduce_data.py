@@ -1,6 +1,6 @@
 
 
-import sys, os
+import sys
 import numpy as np
 from opt_einsum import contract
 
