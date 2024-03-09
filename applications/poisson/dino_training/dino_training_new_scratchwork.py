@@ -34,7 +34,7 @@ import optax
 from jax import jit
 from jax.lax import dynamic_slice_in_dim
 
-# import dinojax as dj
+import dinojax as dj
 
 
 # Load the data
@@ -160,26 +160,8 @@ optimizer_state = optimizer.init(eqx.filter(nn, eqx.is_inexact_array))
 # 	return variables
 
 # Initialize parameters of the model + optimizer.
-from jax import vjp, vmap
-def value_and_jacrev(f, xs):
-    _, pullback =  vjp(f, xs[0])
-    basis = jnp.eye(_.size, dtype=_.dtype)
 
-    @jit
-    def value_and_jacrev_x(x):
-        y, pullback = vjp(f, x)
-        jac = vmap(pullback)(basis)
-        return y, jac[0] #
-    return vmap(value_and_jacrev_x)(xs)
 
-@eqx.filter_jit
-def mean_h1_seminorm_loss(nn, input_X, actual_Y, actual_dYdX):
-	predicted_Y, predicted_dYdX =  value_and_jacrev(nn, input_X)
-	# predicted_Y = predicted_Y.squeeze()
-	# predicted_dYdX = predicted_dYdX.squeeze()
-	return jnp.mean(optax.l2_loss(predicted_Y.squeeze(), actual_Y)) + jnp.mean(optax.l2_loss(predicted_dYdX.squeeze(), actual_dYdX))*dM
-
-grad_loss_fn = eqx.filter_grad(mean_h1_seminorm_loss)
 
 @eqx.filter_jit
 def take_step(	optimizer_state,
@@ -189,7 +171,7 @@ def take_step(	optimizer_state,
 				actual_dYdX
 				):
 	updates, optimizer_state = optimizer.update(
-		grad_loss_fn(nn, 
+		dj.grad_mean_h1_norm_loss_fn(nn, 
 					 input_X, actual_Y, actual_dYdX),
 		optimizer_state)
 	return optimizer_state, eqx.apply_updates(nn, updates)
@@ -236,8 +218,6 @@ def compute_loss_metrics(nn, X, Y, dYdX, Y_L2_norms, dYdX_L2_norms, n_batches):
 	return 1. - jnp.sqrt(rel_mse), 1. - jnp.sqrt(rel_msje), mse + msje
 
 # one_over_n_batches = 1./n_batches
-from jax import lax
-
 
 
 @jit #move 
@@ -331,7 +311,7 @@ test_data_tuple = (m_test, u_test, J_test) #, u_norms_test, J_norms_test)
 
 
 @eqx.filter_jit
-def slice_data(input_X, actual_Y, actual_dYdX, batch_size, end):
+def slice_training_data(input_X, actual_Y, actual_dYdX, batch_size, end):
 	return (end + batch_size, 
 		dynamic_slice_in_dim(input_X, end, batch_size),
 		dynamic_slice_in_dim(actual_Y, end, batch_size), 
@@ -341,18 +321,18 @@ for epoch in range(1,args.num_epochs+1):
 	loader_key, train_data_tuple = create_permuted_arrays(train_data_tuple, batch_size, key=loader_key) #, Y_norms_data, dYdX_norms_data
 	
 	X_data, Y_data, dYdX_data, _, _ = train_data_tuple
-	# start_time = time.time()									
+	# start_time = time.time()
 	end = 0
 	for _ in range(n_train_batches):
-		end, X_data_batch, Y_data_batch, dYdX_data_batch = slice_data(
+		end, X_data_batch, Y_data_batch, dYdX_data_batch = slice_training_data(
 			X_data, Y_data, dYdX_data,  batch_size, end)
 		optimizer_state, nn  = take_step(optimizer_state,
 										nn,
 										X_data_batch,
 										Y_data_batch,
 										dYdX_data_batch) #loss,
-		# can we combine Y and dYdX (flattened) into Y_dYdX_data
-	epoch_time = time.time() - start_time
+		# could combin Y and dYdX (flattened) into Y_dYdX_data and take the L2 norm that way (but then you would need to scale up one of them but the dimension), this woudl probably speed things up
+	# epoch_time = time.time() - start_time
 
 	
 	# print(epoch) #, "loss", loss)#, loss_fn(nn, X_batch, Y_batch, dYdX_batch))

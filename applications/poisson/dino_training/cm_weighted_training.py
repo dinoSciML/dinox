@@ -140,7 +140,7 @@ JTPhi_data = np.load(data_dir+'JTPhi_data.npz')
 
 m_data = all_data['m_data']
 q_data = all_data['q_data']
-# In this case \Phi = I_{d_Q} sp thos os the entire Jacobian
+# In this case \Phi = I_{d_Q} sp this is the entire Jacobian
 PhiTJ_data = np.transpose(JTPhi_data['JTPhi_data'], (0,2,1)) #REFACTOR WITHOUT HTE TRANSPOSE
 
 m_test = m_data[-args.test_data_size:]
@@ -217,7 +217,7 @@ projector_dict['last_layer_bias'] = np.mean(train_dict['q_data'],axis = 0)
 	#TODO: just laod these directly from file (they've already been computed in reduce_data.py. todo later, merge reduce_data and cm_weighted_training)
 
 	train_dict['m_full'] = 
-	train_dict['m_data'] = #
+	train_dict['m_data'] = 
 	test_dict['m_full'] = 
 	test_dict['m_data'] = 
 # 	# Second reduce the Jacobian data using the basis (not projector)
@@ -228,21 +228,62 @@ projector_dict['last_layer_bias'] = np.mean(train_dict['q_data'],axis = 0)
 
 
 #TODO: Reimplement below, setup_the_dino, train_dino, and restitch_and_postprocess
+def choose_network(settings,projector_dict,reduced_input_training = reduced_input_training,\
+														reduced_output_training = reduced_output_training):
+	
+def setup_the_dino(settings,train_dict,projector_dict = None,\
+				 reduced_input_training = False,reduced_output_training = False,\
+				 no_jacobian = False,reduced_output_Jacobian = False):
+	"""
+	This function sets up the dino network for training
+	"""
+	################################################################################
+	# Set up the neural networks
+	regressor = choose_network(settings,projector_dict,reduced_input_training = reduced_input_training,\
+														reduced_output_training = reduced_output_training)
 
-# def setup_the_dino
+	################################################################################
+	# Initial guess choice
+	if settings['initial_guess_path'] is not None:
+		assert os.path.isfile(settings['initial_guess_path']), 'Trained weights may not exist as specified: '+str(settings['initial_guess_path'])
+		import pickle
+		regressor_weights = pickle.load(open(settings['initial_guess_path'],'rb'))
+		for layer in regressor.layers:
+			layer.set_weights(regressor_weights[layer.name])
+		if settings['opt_parameters']['train_hessianlearn']:
+			settings['opt_parameters']['layer_weights'] = regressor_weights
+
+	################################################################################
+	if not no_jacobian:
+		# Tease out the derivatives
+		if reduced_output_Jacobian:
+			reduced_output_basis = projector_dict['output']
+			regressor = equip_model_with_output_reduced_jacobian(regressor,reduced_output_basis,name_prefix = settings['name_prefix'])
+		elif settings['train_full_jacobian']:
+			print('Equipping Jacobian')
+			settings['opt_parameters']['train_full_jacobian'] = settings['train_full_jacobian']
+			regressor = equip_model_with_full_jacobian(regressor,name_prefix = settings['name_prefix'])
+			
+		else:
+			raise("Sketched jacobian not implemented")
+	
+	return regressor
 
 
 # ################################################################################
 # # Set up the neural networks
-# regressor = setup_the_dino(settings,train_dict,projector_dict,reduced_input_training = settings['reduced_input_training'],\
-# 																reduced_output_training = settings['reduced_output_training'])
+regressor = setup_the_dino(settings,train_dict,projector_dict,reduced_input_training = settings['reduced_input_training'],\
+																reduced_output_training = settings['reduced_output_training'])
 
+#Implement something similar to summary for equinox???
 # regressor.summary()
 
 # ################################################################################
 # # Start the training
-# r_logger = {}
-# regressor = train_dino(settings, regressor,train_dict,test_dict, logger = r_logger)
+r_logger = {}
+#TODO: Implement train_dino as the code that I already wrote
+						#network settings should change what the objective function is
+regressor = train_dino(settings, regressor, train_dict,test_dict, logger = r_logger)
 
 # ################################################################################
 # # Post-processing / re-stitching in the case of the reduced training.
