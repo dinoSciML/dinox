@@ -4,16 +4,15 @@ import equinox as eqx
 import pickle
 
 from .data_utilities import (
-    embed_data_in_encoder_decoder_subspaces,
     load_data_from_disk,
 	permute_arrays,
 	slice_data,
     split_training_testing_data)
-
+from .embed_data import embed_data_in_encoder_decoder_subspaces
 from .metrics import (
-				grad_mean_h1_norm_loss_fn,
-				grad_mean_l2_norm_loss_fn
-				mean_h1_seminorm_l2_errors_and_norms=) 
+				grad_mean_h1_seminorm_loss_fn,
+				grad_mean_l2_norm_loss_fn,
+				mean_h1_seminorm_l2_errors_and_norms) 
 
 def train_nn_regressor(*,
 	untrained_regressor,
@@ -21,7 +20,7 @@ def train_nn_regressor(*,
 	testing_data,
 	permute_key,
 	training_config_dict,
-	logger)
+	logger):
 	#DOCUMENT ME, remainder not allowed
 
 	####################################################################################
@@ -38,7 +37,7 @@ def train_nn_regressor(*,
 	if loss_norm_weights[1] == 0.0:
 		grad_loss_fn = grad_mean_l2_norm_loss_fn
 	else:
-		grad_loss_fn = grad_mean_h1_norm_loss_fn
+		grad_loss_fn = grad_mean_h1_seminorm_loss_fn
 
 	@eqx.filter_jit
 	def take_step( optimizer_state, nn, X, Y, dYdX ):
@@ -158,7 +157,7 @@ def train_nn_regressor(*,
 		print('Max test accuracy H1 (semi-norm) = ',100*np.max(np.array(metrics_history['test_accuracy_h1'])))
 		print('The metrics took', metric_time, 's')
 
-def train_dino_in_embedding_space(embedded_training_config_dict)
+def train_dino_in_embedding_space(embedded_training_config_dict):
 	config_dict = embedded_training_config_dict
 
 	#################################################################################
@@ -205,10 +204,10 @@ def train_dino_in_embedding_space(embedded_training_config_dict)
 	#################################################################################
 	# logger = {'reduced':training_logger} #,'full': final_logger}
 	logging_dir = 'logging/'
-    # Involves Disk I/O
+	# Involves Disk I/O
 	os.makedirs(logging_dir, exist_ok = True)
 	with open(logging_dir+config_dict['network_serialization']['network_name'] +'.pkl', 'wb+') as f:
-        pickle.dump(training_results, f, pickle.HIGHEST_PROTOCOL)
+		pickle.dump(training_results, f, pickle.HIGHEST_PROTOCOL)
 
 	#################################################################################
 	# Save neural network parameters to disk (serialize the equinox pytrees)        #
@@ -221,9 +220,9 @@ def train_dino_in_embedding_space(embedded_training_config_dict)
 	#################################################################################
 	# Save config file for reproducibility                                          #
 	#################################################################################	
-    cli_dir = 'cli/'
-    # Involves Disk I/O
+	cli_dir = 'cli/'
+	# Involves Disk I/O
 	os.makedirs(cli_dir, exist_ok = True)
 	#does the name tell you everything? we won't vary other parameters, yea?
 	with open(cli_dir+config_dict['network_serialization']['network_name'] +'.pkl', 'wb+') as f:
-        pickle.dump(config, f, pickle.HIGHEST_PROTOCOL)
+		pickle.dump(config, f, pickle.HIGHEST_PROTOCOL)

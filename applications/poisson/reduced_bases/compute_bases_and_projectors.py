@@ -77,9 +77,9 @@ if args.basis_type.lower() == 'pod':
 		print('||Psi^*Psi - I|| = ',orth_error)
 		assert orth_error < 1e-5
 
-	np.save('POD_basis',phi)
+	np.save('POD_decoder_basis',phi)
 	np.save('POD_d',d_POD)
-	np.save('POD_projector',Mphi)
+	np.save('POD_decoder_cobasis',Mphi)
 	np.save('POD_shift',u_shift)
 
 	fig, ax = plt.subplots()
@@ -110,9 +110,9 @@ elif args.basis_type.lower() == 'kle':
 		print('||Psi^*Psi - I|| = ',orth_error)
 		assert orth_error < 1e-5
 
-	np.save('KLE_basis',input_basis)
+	np.save('KLE_encoder_basis',input_basis)
 	np.save('KLE_d',d_KLE)
-	np.save('KLE_projector',input_projector)
+	np.save('KLE_encoder_cobasis',input_projector)
 
 elif args.basis_type.lower() == 'as':
 	################################################################################
@@ -205,9 +205,9 @@ elif args.basis_type.lower() == 'as':
 		print('||Psi^*Psi - I|| = ',orth_error)
 		assert orth_error < 1e-5
 
-	np.save('AS_input_basis',input_basis)
+	np.save('AS_encoder_basis',input_basis)
 	np.save('AS_d_GN',d_GN)
-	np.save('AS_input_projector',input_projector)
+	np.save('AS_encoder_cobasis',input_projector)
 
 	fig, ax = plt.subplots()
 	ax.semilogy(np.arange(len(d_GN)), d_GN)
