@@ -12,299 +12,150 @@
 # You should have received a copy of the GNU Lesser General Public License
 # If not, see <http://www.gnu.org/licenses/>.
 #
-# Author: Tom O'Leary-Roseberry
-# Contact: tom.olearyroseberry@utexas.edu
+# Author: Joshua Chen and Tom O'Leary-Roseberry
+# Contact: joshuawchen@icloud.com | tom.olearyroseberry@utexas.edu
 
 import os, sys
-os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3' 
-os.environ['KMP_DUPLICATE_LIB_OK']='True'
-os.environ["KMP_WARNINGS"] = "FALSE" 
-import numpy as np
-import tensorflow as tf
-if int(tf.__version__[0]) > 1:
-    import tensorflow.compat.v1 as tf
-    tf.disable_v2_behavior()
 
+import numpy as np
 import time
 import pickle
 
-
-sys.path.append( os.environ.get('DINO_PATH'))
-from dinojax import neural_network_settings, 
+sys.path.append( os.environ.get('DINOJAX_PATH'))
+from dinojax import train_nn_regressor,
+					instantiate_nn,
+					split_training_testing_data
 
 from argparse import ArgumentParser
 
-# Arguments to be parsed from the command line execution
+
+################################################################################
+# Define CLI arguments 
+################################################################################
 parser = ArgumentParser(add_help=True)
-# Architectural parameters
+
+# Random seed parameter
+parser.add_argument('-run_seed', '--run_seed', type=int, default=0, help="Seed for NN initialization/ data shuffling / initialization")
+
+# Neural Network Architecture parameters
 parser.add_argument("-architecture", dest='architecture',required=False, default = 'rb_dense', help="architecture type: as_dense or generic_dense",type=str)
-parser.add_argument("-input_basis", dest='input_basis',required=False, default = 'as',  help="input basis: as or kle",type=str)
-parser.add_argument("-output_basis", dest='output_basis',required=False, default = 'jjt',  help="output basis: pod or jjt",type=str)
+parser.add_argument("-encoder_basis", dest='encoder_basis',required=False, default = 'as',  help="input basis: as or kle",type=str)
+# parser.add_argument("-decoder", dest='decoder',required=False, default = 'jjt',  help="output basis: pod or jjt",type=str)
 parser.add_argument("-fixed_input_rank", dest='fixed_input_rank',required=False, default = 200, help="rank for input of AS network",type=int)
 parser.add_argument("-fixed_output_rank", dest='fixed_output_rank',required=False, default = 50, help="rank for output of AS network",type=int)
 parser.add_argument("-truncation_dimension", dest='truncation_dimension',required=False, default = 200, help="truncation dimension for low rank networks",type=int)
+
+# Neural Network Serialization parameters
 parser.add_argument("-network_name", dest='network_name',required=True,  help="out name for the saved weights",type=str)
 
-parser.add_argument("-data_dir", dest='data_dir',required=True,  help="out name for the saved weights",type=str)
-
-# Optimization parameters
-parser.add_argument("-total_epochs", dest='total_epochs',required=False, default = 100,  help="total epochs for training",type=int)
-
-# Loss function parameters
-parser.add_argument("-target_rank", dest='target_rank',required=False, default = 50,  help="target rank to be learned for Jacobian information",type=int)
-parser.add_argument("-batch_rank", dest='batch_rank',required=False, default = 50,  help="batch rank parameter used in sketching of Jacobian information",type=int)
-parser.add_argument("-l2_weight", dest='l2_weight',required=False, default = 1.,  help="weight for l2 term",type=float)
-parser.add_argument("-h1_weight", dest='h1_weight',required=False, default = 1.,  help="weight for h1 term",type=float)
-
-# Full J training
-parser.add_argument("-train_full_jacobian", dest='train_full_jacobian',required=False, default = 1,  help="full J",type=int)
-
+# Data (Directory Location/Training) parameters
+parser.add_argument("-data_dir", dest='data_dir',required=True,  help="Directory where training data lies",type=str)
 parser.add_argument("-train_data_size", dest='train_data_size',required=False, default = 9500,  help="training data size",type=int)
 parser.add_argument("-test_data_size", dest='test_data_size',required=False, default = 500,  help="testing data size",type=int)
 
+# Optimization parameters
+parser.add_argument("-optax_optimizer", dest='optax_optimizer',required=False, default = 'adam',  help="Name of the optax optimizer to use",type=str)
+parser.add_argument("-total_epochs", dest='total_epochs',required=False, default = 100,  help="total epochs for training",type=int)
+parser.add_argument('-batch_size', dest='batch_size', type = int, default = 20, help = 'gradient batch size')
+parser.add_argument('-step_size', '--step_size', type=float, default=1e-3, help="What step size or 'learning rate'?")
+
+# Loss function parameters
+parser.add_argument("-l2_weight", dest='l2_weight',required=False, default = 1.,  help="weight for l2 term",type=float)
+parser.add_argument("-h1_weight", dest='h1_weight',required=False, default = 1.,  help="weight for h1 term",type=float)
+
+
+# Encoder/Decoder parameters
+parser.add_argument('-rb_dir', '--rb_dir', type=str, default='', help="Where are the reduced bases")
+parser.add_argument('-encoder_basis', '--encoder_basis', type=str, default='kle', help="What type of input basis? Choose from [kle, as] ")
+parser.add_argument('-decoder_basis', '--decoder_basis', type=str, default='pod', help="What type of input basis? Choose from [pod] ")
+parser.add_argument('-save_embedded_data', '--save_embedded_data', help="Should we save the embedded training data to disk or just use it in training without saving to disk. WIthout this flag, defaults to false", default=False, action=argparse.BooleanOptionalAction)
+# parser.add_argument('-J_data', '--J_data', type=int, default=1, help="Is there J data??? ")
+
 args = parser.parse_args()
 
-problem_settings = {}
 
 
-settings = neural_network_settings(problem_settings)
+################################################################################
+# Parse arguments and place them in a config dictionary 	    			   #
+################################################################################
+args = parser.parse_args()
+problem_config_dict = {} #is this necessary
 
-settings['data_dir'] = args.data_dir
-
-settings['target_rank'] = args.target_rank
-settings['batch_rank'] = args.batch_rank
-
-settings['train_data_size'] = args.train_data_size
-settings['test_data_size'] = args.test_data_size
-
-settings['architecture'] = args.architecture
-settings['depth'] = 6
-settings['layer_rank'] = 50
-settings['activation'] = 'gelu'
-
-settings['fixed_input_rank'] = args.fixed_input_rank
-settings['fixed_output_rank'] = args.fixed_output_rank
-settings['truncation_dimension'] = args.truncation_dimension
-settings['hidden_layer_dimensions'] = (settings['depth']-1)*[settings['truncation_dimension']]+[settings['fixed_output_rank']]
-
-settings['input_basis'] = args.input_basis
-settings['output_basis'] = 'pod'
-
-settings['train_full_jacobian'] = args.train_full_jacobian
-settings['opt_parameters']['train_full_jacobian'] = args.train_full_jacobian
-
-settings['reduced_input_training'] = True
-settings['reduced_output_training'] = False
+config_dict = {}
+# 	# How to weight the least squares losses [l2,h1 seminorm]
+# 	opt_parameters['loss_weights'] = [1.0,1.0]
 
 
-if (settings['batch_rank'] == settings['target_rank']):
-	settings['outer_epochs'] = 1
-	settings['opt_parameters']['keras_epochs'] = args.total_epochs
+config_dict['forward_problem'] = problem_config_dict
+
+# Neural Network Architecture parameters
+config_dict['nn']['architecture'] = args.architecture
+config_dict['nn']['depth'] = 6 
+config_dict['nn']['layer_rank'] = 50 #nn_width = 2*args.rb_rank?
+config_dict['nn']['activation'] = 'gelu'
+# config_dict['hidden_layer_dimensions'] = (config_dict['depth']-1)*[config_dict['truncation_dimension']]+[config_dict['fixed_output_rank']]
+
+# Data (Directory Location/Training) parameters
+config_dict['data']['data_dir'] = args.data_dir
+config_dict['data']['train_data_size'] = args.train_data_size
+config_dict['data']['test_data_size'] = args.test_data_size
+if config_dict['encoder_decoder']['encode'] or config_dict['encoder_decoder']['decode']:
+	config_dict['data']['data_file_names'] = \
+		('m_data_reduced','q_data_reduced','J_data_reduced')
 else:
-	settings['shuffle_every_epoch'] = True
-	settings['outer_epochs'] = args.total_epochs
-	settings['opt_parameters']['keras_epochs'] = 1
-settings['opt_parameters']['keras_verbose'] = True
+	config_dict['data']['data_file_names'] = \
+		('m_data','q_data','J_data')
 
+# Optimization parameters
+config_dict['training']['step_size'] = args.step_size
+config_dict['training']['batch_size'] = args.batch_size
+config_dict['training']['optax_optimizer'] = args.optax_optimizer
+config_dict['training']['optax_epochs'] = args.total_epochs
+config_dict['training']['shuffle_every_epoch'] = True
+loss_weights = [args.l2_weight,args.h1_weight]
+for loss_weight in loss_weights:
+	assert loss_weight >= 0
+config_dict['training']['loss_weights'] = loss_weights
 
-settings['opt_parameters']['loss_weights'] = [args.l2_weight,args.h1_weight]
+#Encoder/Decoder parameters
+config_dict['encoder_decoder']['encode'] = True
+config_dict['encoder_decoder']['decode'] = False
+config_dict['encoder_decoder']['encoder'] = args.encoder_basis
+config_dict['encoder_decoder']['decoder'] = 'pod' #ignored for now, decode is False
+encoder_decoder_dir = f'{args.data_dir}reduced_bases/' if args.rb_dir=='' else args.
+if args.encoder_basis.lower() == 'kle':
+	encoder_cobasis_filename = 'KLE_cobasis.npy'
+	encoder_basis_filename = 'KLE_basis.npy'
+elif args.encoder_basis.lower() == 'as':
+	encoder_cobasis_filename = 'AS_encoder_cobasis.npy'
+	encoder_basis_filename = 'AS_encoder_basis.npy'
+else:
+	raise
+if 'full_state' in args.data_dir:
+	if args.decoder_basis.lower() == 'pod':
+		decoder_filename = 'POD_projector.npy'
+	else:
+		decoder_filename = None
+config_dict['encoder_decoder']['save_location'] = \
+	args.data_dir if args.save_embedded_data else None
+config_dict['encoder_decoder']['encoder_decoder_dir'] = encoder_decoder_dir
+config_dict['encoder_decoder']['encoder_basis_filename'] = encoder_basis_filename
+config_dict['encoder_decoder']['encoder_cobasis_filename'] = encoder_cobasis_filename
+['encoder_decoder']['decoder_filename'] = decoder_filename
 
-steps_per_epoch = int(args.train_data_size/ settings['opt_parameters']['keras_batch_size'] )
-total_steps = args.total_epochs*steps_per_epoch
+# config_dict['truncation_dimension'] = args.truncation_dimension
 
-# Custom optimizer
-# lr_schedule = tf.keras.optimizers.schedules.PiecewiseConstantDecay(\
-# 			boundaries=[int(0.25*total_steps),int(0.5*total_steps), int(0.75*total_steps)],\
-# 	 		values=[0.001,0.0005,0.00025, 0.0001])
-
-
-settings['opt_parameters']['optax_optimizer'] = optax.optimizers.Adam(learning_rate=lr_schedule)
-
-settings['network_name'] = args.network_name
+# # Deserializing / Serializing Neural Network settings
+config_dict['network_serialization']['network_name'] = args.network_name
+config_dict['network_serialization']['save_weights'] = True
+config_dict['network_serialization']['weights_dir'] = 'trained_weights/''
+config_dict['network_serialization']['initial_guess_path'] = 
 
 if args.l2_weight != 1.0:
-	settings['network_name'] += 'l2_weight_'+str(args.l2_weight)
+	config_dict['network_serialization']['network_name'] += 'l2_weight_'+str(args.l2_weight)
 
+#'nn','data','encoder_decoder', network_serialization', 'training',
 
-for loss_weight in settings['opt_parameters']['loss_weights']:
-		assert loss_weight >= 0
-################################################################################
-# Set up training and testing data.
+#2 digits in the F and 1 digit in the Jacobian
 
-
-data_dir = settings['data_dir']
-
-
-all_data = np.load(data_dir+'mq_data.npz')
-JTPhi_data = np.load(data_dir+'JTPhi_data.npz')
-
-m_data = all_data['m_data']
-q_data = all_data['q_data']
-# In this case \Phi = I_{d_Q} sp this is the entire Jacobian
-PhiTJ_data = np.transpose(JTPhi_data['JTPhi_data'], (0,2,1)) #REFACTOR WITHOUT HTE TRANSPOSE
-
-m_test = m_data[-args.test_data_size:]
-q_test = q_data[-args.test_data_size:]
-PhiTJ_test = PhiTJ_data[-args.test_data_size:]
-
-m_remaining = m_data[:-args.test_data_size]
-q_remaining = q_data[:-args.test_data_size]
-PhiTJ_remaining = PhiTJ_data[:-args.test_data_size]
-
-
-n_remaining = m_remaining.shape[0]
-
-n_train = args.train_data_size
-
-if n_train > n_remaining:
-	print('More data requested than available for training')
-	n_train = n_remaining
-	print('Using ',n_train,'instead')
-
-m_train = m_remaining[:n_train]
-q_train = q_remaining[:n_train]
-PhiTJ_train = PhiTJ_remaining[:n_train]
-
-# TODO: remove these dicts, only keep data, stored in jax arrays
-# train_dict = {'m_data':m_train,'q_data':q_train, 'J_data':PhiTJ_train}
-# test_dict = {'m_data': m_test, 'q_data': q_test, 'J_data':PhiTJ_test}
-
-
-################################################################################
-# Setup the reduced bases (if it applies)
-
-projector_dict = {}
-dQ = q_data[0].shape[0]
-input_basis = np.load('../reduced_bases/AS_input_projector.npy')[:,:args.fixed_input_rank]
-input_projector = np.load('../reduced_bases/R_AS_input_projector.npy')[:,:args.fixed_input_rank]
-
-print('input_basis.shape = ',input_basis.shape)
-
-print('input_projector.shape = ',input_projector.shape)
-
-print('m_train.shape = ', train_dict['m_data'].shape)
-
-
-
-check_orth = True
-if check_orth:
-	PsistarPsi = input_projector.T@input_basis
-	print('||Psi^*Psi - I|| = ',np.linalg.norm(PsistarPsi - np.eye(PsistarPsi.shape[0])))
-
-
-projector_dict['input'] = input_projector
-projector_dict['output'] = np.eye(dQ)
-projector_dict['last_layer_bias'] = np.mean(train_dict['q_data'],axis = 0)
-
-#TODO: place reults form reduce_data in projector_dict
-
-# projector_dict = setup_reduced_bases(settings,train_dict)
-# Prune the data here if desired...
-# if settings['reduced_input_training'] or settings['reduced_output_training']:
-# 	assert settings['train_full_jacobian']
-# 	# Need to pass the reduced input dimension in for network construction
-# 	# The projector is assumed to have dims (dM,rM)
-# 	assert len(projector_dict['input'].shape) == 2
-# 	if settings['reduced_input_training']:
-# 		settings['reduced_input_dim'] = projector_dict['input'].shape[1]
-# 		print('reduced_input_dim = ',settings['reduced_input_dim'])
-# 	if settings['reduced_output_training']:
-# 		settings['reduced_output_dim'] = projector_dict['output'].shape[1]
-
-
-# 	# Prune the data here:
-# 	# First m->m_r = \Psi^*m = (RV_r)^Tm
-	#TODO: just laod these directly from file (they've already been computed in reduce_data.py. todo later, merge reduce_data and cm_weighted_training)
-
-	train_dict['m_full'] = 
-	train_dict['m_data'] = 
-	test_dict['m_full'] = 
-	test_dict['m_data'] = 
-# 	# Second reduce the Jacobian data using the basis (not projector)
-	train_dict['J_full'] = 
-	train_dict['J_data'] = 
-	test_dict['J_full'] = 
-	test_dict['J_data'] = 
-
-
-#TODO: Reimplement below, setup_the_dino, train_dino, and restitch_and_postprocess
-def choose_network(settings,projector_dict,reduced_input_training = reduced_input_training,\
-														reduced_output_training = reduced_output_training):
-	
-def setup_the_dino(settings,train_dict,projector_dict = None,\
-				 reduced_input_training = False,reduced_output_training = False,\
-				 no_jacobian = False,reduced_output_Jacobian = False):
-	"""
-	This function sets up the dino network for training
-	"""
-	################################################################################
-	# Set up the neural networks
-	regressor = choose_network(settings,projector_dict,reduced_input_training = reduced_input_training,\
-														reduced_output_training = reduced_output_training)
-
-	################################################################################
-	# Initial guess choice
-	if settings['initial_guess_path'] is not None:
-		assert os.path.isfile(settings['initial_guess_path']), 'Trained weights may not exist as specified: '+str(settings['initial_guess_path'])
-		import pickle
-		regressor_weights = pickle.load(open(settings['initial_guess_path'],'rb'))
-		for layer in regressor.layers:
-			layer.set_weights(regressor_weights[layer.name])
-		if settings['opt_parameters']['train_hessianlearn']:
-			settings['opt_parameters']['layer_weights'] = regressor_weights
-
-	################################################################################
-	if not no_jacobian:
-		# Tease out the derivatives
-		if reduced_output_Jacobian:
-			reduced_output_basis = projector_dict['output']
-			regressor = equip_model_with_output_reduced_jacobian(regressor,reduced_output_basis,name_prefix = settings['name_prefix'])
-		elif settings['train_full_jacobian']:
-			print('Equipping Jacobian')
-			settings['opt_parameters']['train_full_jacobian'] = settings['train_full_jacobian']
-			regressor = equip_model_with_full_jacobian(regressor,name_prefix = settings['name_prefix'])
-			
-		else:
-			raise("Sketched jacobian not implemented")
-	
-	return regressor
-
-
-# ################################################################################
-# # Set up the neural networks
-regressor = setup_the_dino(settings,train_dict,projector_dict,reduced_input_training = settings['reduced_input_training'],\
-																reduced_output_training = settings['reduced_output_training'])
-
-#Implement something similar to summary for equinox???
-# regressor.summary()
-
-# ################################################################################
-# # Start the training
-r_logger = {}
-#TODO: Implement train_dino as the code that I already wrote
-						#network settings should change what the objective function is
-regressor = train_dino(settings, regressor, train_dict,test_dict, logger = r_logger)
-
-# ################################################################################
-# # Post-processing / re-stitching in the case of the reduced training.
-# if settings['reduced_input_training'] or settings['reduced_output_training']:
-# 	if True:
-# 		train_dict['m_data'] = train_dict['m_full']
-# 		train_dict['J_data'] = train_dict['J_full']
-# 		test_dict['m_data'] = test_dict['m_full']
-# 		test_dict['J_data'] = test_dict['J_full']
-# 	final_logger = {}
-# 	regressor = restitch_and_postprocess(regressor,settings,train_dict,test_dict,projector_dict,logger = final_logger)
-
-# defrestitch_and_postprocess should also serialize the network weights etc
-
-# logger = {'reduced':r_logger,'full': final_logger}
-
-# logging_dir = 'logging/'
-# os.makedirs(logging_dir,exist_ok = True)
-
-
-# with open(logging_dir+args.network_name+'.pkl', 'wb+') as f:
-#         pickle.dump(logger, f, pickle.HIGHEST_PROTOCOL)
-
-
+train_dino_in_embedding_space(embedded_training_config_dict=config_dict)
