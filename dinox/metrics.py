@@ -48,7 +48,7 @@ def value_and_jacrev(f, xs):
     def value_and_jacrev_x(x):
         y, pullback = vjp(f, x)
         jac = vmap(pullback)(basis)
-        return y, jac[0] #
+        return y, jac[0] # There is only one jacobian matrix here, so we extract it
     return vmap(value_and_jacrev_x)(xs)
 
 def create_mean_h1_seminorm_l2_errors_and_norms(dM):
