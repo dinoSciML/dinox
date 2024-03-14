@@ -1,10 +1,11 @@
+import jax
+import numpy as np
 from opt_einsum import contract
-from .data_utilities import DinoTrainingDataclass
-from typing import Dict
+from typing import Dict, Tuple
 
 def embed_data_in_encoder_decoder_subspaces(
-	input_output_data: DinoTrainingDataclass,
-	encoder_decoder_config_dict: Dict) -> DinoTrainingDataclass:
+	input_output_data: Tuple[jax.Array],
+	encoder_decoder_config_dict: Dict) -> Tuple[jax.Array]:
 	################################################################################
 	# Grab variables from config												   #
 	################################################################################
@@ -18,34 +19,43 @@ def embed_data_in_encoder_decoder_subspaces(
 	################################################################################
 	# Reduce the input data and save to file									   #
 	################################################################################
+	import numpy as np
+	import jax.numpy as jnp
+	if len(input_output_data) == 3:
+		X, Y, dYdX = input_output_data
+	else:
+		X, Y = input_output_data
+		dYdX = None
 	reduced_X = \
-		contract('mr,dm->dr', np.load(encoder_decoder_dir + encoder_basis_filename), input_output_data.X)
-		
+		contract('dm,mr->dr', X, jnp.asarray(np.load(encoder_decoder_dir + encoder_basis_filename))) #400 x 4225	
 	reduced_Y = (
-		contract('ur,du->dr', np.load(encoder_decoder_dir + decoder_filename), input_output_data.Y) 
+		contract('du,ur->dr', Y, jnp.asarray(np.load(encoder_decoder_dir + decoder_filename))) 
 		if decoder_filename 
-		else input_output_data.Y)
+		else Y)
 	if save_location:
 		np.save(save_location+"X_reduced.npy", reduced_X)
+		print("Saved embedded training data files.")
 		np.save(save_location+"Y_reduced.npy", reduced_Y)
-	if input_output_data.dYdX:
+	if dYdX is not None:
 		#  Load the and project the Jacobian data with the encoder cobasis
 		reduced_dYdX = \
 			contract('dmu,mr->dur',
-					 np.load(______+'JstarPhi_data.npz')['JstarPhi_data'],
-					 np.load(save_location+encoder_cobasis_filename))
-		if save_location:
+					dYdX,
+					jnp.asarray(np.load(encoder_decoder_dir+encoder_cobasis_filename)))
+		if save_location is not None:
 			np.save(save_location+"J_reduced.npy", reduced_dYdX)
 			np.savez(save_location+reduced_zip_filename, 
 					m_data=reduced_X,
 					q_data=reduced_Y,
 					J_data = reduced_dYdX)
+			print("Saved embedded training data files.")
 		print('Successfully reduced the data.')
-		return input_output_data.__class__(X=reduced_X, Y=reduced_Y, dYdX=reduced_dYdX)
+		return reduced_X, reduced_Y, reduced_dYdX
 	else:
-		if save_location:
+		if save_location is not None:
 			np.savez(save_location+reduced_zip_filename,
 					m_data=reduced_X,
 					q_data=reduced_Y)		
+			print("Saved embedded training data files.")
 		print('Successfully reduced the data.')
-		return input_output_data.__class__(X=reduced_X, Y=reduced_Y)
+		return reduced_X, reduced_Y
