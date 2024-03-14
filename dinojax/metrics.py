@@ -4,6 +4,7 @@ from jax.lax import dynamic_slice_in_dim
 import jax.numpy as jnp
 from jax import vjp, vmap
 import optax
+from typing import Callable
 
 @jax.jit
 def squared_l2_error(y_true, y_pred):
@@ -78,7 +79,7 @@ def mean_l2_norm_errors_and_norms(nn, X, Y, dYdX):
 	one_over_n_batches*jnp.mean(mse_i),
 	one_over_n_batches*jnp.mean(mse_i), one_over_n_batches*jnp.mean(normalize_values(mse_i, dynamic_slice_in_dim(Y_L2_norms, end_idx, batch_size))), one_over_n_batches*jnp.mean(normalize_values(msje_i, dynamic_slice_in_dim(dYdX_L2_norms, end_idx, batch_size)))
 
-def create_mean_h1_seminorm_loss(dM):
+def create_mean_h1_seminorm_loss(dM: int) -> Callable:
 	@eqx.filter_jit
 	def mean_h1_seminorm_loss(nn:eqx.nn, input_X: jax.Array, actual_Y: jax.Array, actual_dYdX: jax.Array):
 		predicted_Y, predicted_dYdX =  value_and_jacrev(nn, input_X)
@@ -120,7 +121,7 @@ def compute_l2_loss_metrics(nn, X, Y, dYdX, Y_L2_norms, dYdX_L2_norms, n_batches
 	acc_h1 = 1. - jnp.sqrt(rel_msje)
 	mean_h1_seminorm_loss = mse + msje
 	return 1. - jnp.sqrt(rel_mse), 1. - jnp.sqrt(rel_msje), mse + msje
-def create_compute_h1_loss_metrics(dM):
+def create_compute_h1_loss_metrics(dM: int) -> Callable:
 	mean_h1_seminorm_errors_and_norms = create_mean_h1_seminorm_l2_errors_and_norms(dM)
 	def compute_loss_metrics(nn, X, Y, dYdX, Y_L2_norms, dYdX_L2_norms, n_batches):
 		#DOCUMENT ME
