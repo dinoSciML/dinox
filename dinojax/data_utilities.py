@@ -6,7 +6,8 @@ import jax.random as jr
 from jax import vmap
 import numpy as np
 from kvikio.numpy import LikeWrapper
-from typing import Dict, Iterable, Union, Tuple, TYPE_CHECKING # TypeAlias,
+from pathlib import Path
+from typing import Any, Dict, Iterable, Union, Tuple, TYPE_CHECKING # TypeAlias,
 
 def create_array_permuter(N):
 	indices = jnp.arange(N)
@@ -30,6 +31,15 @@ def slice_data(X: jax.Array, Y: jax.Array, dYdX: jax.Array, batch_size: int, end
 		dynamic_slice_in_dim(X, end_idx, batch_size),
 		dynamic_slice_in_dim(Y, end_idx, batch_size), 
 		dynamic_slice_in_dim(dYdX, end_idx, batch_size))
+
+def save_to_pickle(file_path: Path, data: Any):
+	# Involves Disk I/O
+	ext = file_path.suffix
+	if not ext:
+		ext = '.pkl'
+	makedirs(file_path.parents[0], exist_ok = True)
+	with open(Path.joinpath(file_path, ext), 'wb+') as file:
+		pickle.dump(data, file, pickle.HIGHEST_PROTOCOL)
 
 def load_data_disk_direct_to_gpu(data_config_dict):
 	data_dir = data_config_dict['data_dir']
