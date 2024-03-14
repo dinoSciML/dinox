@@ -15,10 +15,8 @@
 # Author: Joshua Chen and Tom O'Leary-Roseberry
 # Contact: joshuawchen@icloud.com | tom.olearyroseberry@utexas.edu
 
-import os, sys
+import sys
 import numpy as np
-import time
-import pickle
 import jax.random as jr
 from argparse import ArgumentParser, BooleanOptionalAction
 
@@ -33,7 +31,7 @@ from dinojax import train_dino_in_embedding_space
 parser = ArgumentParser(add_help=True)
 
 # Random seed parameter
-parser.add_argument('-run_seed', '--run_seed', type=int, default=0, help="Seed for NN initialization/ data shuffling / initialization")
+parser.add_argument('-run_seed', '--run_seed', type=int, default=7, help="Seed for NN initialization/ data shuffling / initialization")
 
 # Neural Network Architecture parameters
 parser.add_argument("-architecture", dest='architecture',required=False, default = 'generic_dense', help="architecture type: as_dense or generic_dense",type=str)
@@ -71,8 +69,6 @@ parser.add_argument('-save_embedded_data', '--save_embedded_data', help="Should 
 
 args = parser.parse_args()
 
-
-
 ################################################################################
 # Parse arguments and place them in a config dictionary 	    			   #
 ################################################################################
@@ -86,6 +82,7 @@ config_dict['forward_problem'] = problem_config_dict
 # Neural Network Architecture parameters
 config_dict['nn']['architecture'] = args.architecture
 config_dict['nn']['depth'] = 6 
+#TODO: CHECK ON THIS, as a functio nof DIMENSION REDUCTION PARMETERS!
 config_dict['nn']['layer_width'] = 2*50 #args.rb_rank 
 # config_dict['nn']['layer_rank'] = 50 #nn_width = 2*args.rb_rank?
 config_dict['nn']['activation'] = 'gelu'
@@ -118,17 +115,17 @@ config_dict['encoder_decoder']['encoder_decoder_dir'] = encoder_decoder_dir
 config_dict['encoder_decoder']['encoder_basis_filename'] = encoder_basis_filename
 config_dict['encoder_decoder']['encoder_cobasis_filename'] = encoder_cobasis_filename
 config_dict['encoder_decoder']['decoder_filename'] = decoder_filename
-
+# config_dict['encoder_decoder']['reduced_data_filenames'] = ('X_reduced.npy','Y_reduced.npy','J_reduced.npy') #these files may not exist
 
 # Data (Directory Location/Training) parameters
 config_dict['data']['data_dir'] = args.data_dir
 config_dict['data']['train_data_size'] = args.train_data_size
 config_dict['data']['test_data_size'] = args.test_data_size
 if config_dict['encoder_decoder']['encode'] or config_dict['encoder_decoder']['decode']:
-	config_dict['data']['data_file_names'] = \
-		('m_data.npy','q_data.npy','J_data.npy') #('X_reduced.npy','Y_reduced.npy','J_reduced.npy')
+	config_dict['data']['data_filenames'] = \
+		('m_data.npy','q_data.npy','J_data.npy')
 else:
-	config_dict['data']['data_file_names'] = \
+	config_dict['data']['data_filenames'] = \
 		('m_data.npy','q_data.npy','J_data.npy')
 
 # Optimization parameters
@@ -151,9 +148,8 @@ config_dict['network_serialization']['weights_dir'] = 'trained_weights/'
 # config_dict['network_serialization']['initial_guess_path'] = 
 
 if args.l2_weight != 1.0:
-	config_dict['network_serialization']['network_name'] += 'l2_weight_'+str(args.l2_weight)
-
-jax_model_key = jr.PRNGKey(args.run_seed)
-train_dino_in_embedding_space(jax_model_key, embedded_training_config_dict=config_dict)
+	config_dict['network_serialization']['network_name'] += f'l2_weight_{args.l2_weight}_seed_{args.run_seed}'
+train_dino_in_embedding_space(model_key = jr.PRNGKey(args.run_seed), 
+							  embedded_training_config_dict=config_dict)
 
 #2 digits in the F and 1 digit in the Jacobian
