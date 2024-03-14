@@ -159,7 +159,7 @@ def train_nn_regressor(*,
 		# print('Max test accuracy L2 = ',100*np.max(np.array(metrics_history['test_accuracy_l2'])))
 		# print('Max test accuracy H1 (semi-norm) = ',100*np.max(np.array(metrics_history['test_accuracy_h1'])))
 		# print('The metrics took', metric_time, 's')
-
+	print("Total time", time.time() - start_time)
 def train_dino_in_embedding_space(model_key, embedded_training_config_dict):
 	#################################################################################
 	# Create variable aliases for readability										#
@@ -170,19 +170,21 @@ def train_dino_in_embedding_space(model_key, embedded_training_config_dict):
 	# Load training/testing data from disk, directly onto GPU as jax arrays  		#
 	#################################################################################
 	config_dict['data']['N'] = 5000 #TEMPORARY HACK until i know what to do here
-	data = load_data_disk_direct_to_gpu(config_dict['data']) # Involves Disk I/O
-
+	data_config_dict = config_dict['data']
+	data = load_data_disk_direct_to_gpu(data_config_dict) # Involves Disk I/O
+	
 	#################################################################################
 	# Embed training data in subspace using encoder/decoder bases/cobases           #
 	#################################################################################
-	encoder_decoder_dict = config_dict['encoder_decoder']
+	encodec_dict = config_dict['encoder_decoder']
 
 	#if the loaded data is not 'reduced' and we want to encode/decode (i.e. use the active subspace)
-	if encoder_decoder_dict['encode'] or encoder_decoder_dict['decode']:
+	if (encodec_dict['encode'] or encodec_dict['decode']) and \
+	   data_config_dict.get('reduced_data_filenames') is None:
         # Involves Disk I/O
 		data = embed_data_in_encoder_decoder_subspaces(
 			data,
-			encoder_decoder_dict)
+			encodec_dict)
 		# config_dict['encoder_decoder']['last_layer_bias'] = np.mean(training_data['q_data'],axis = 0)
 			
 	#################################################################################
@@ -211,20 +213,23 @@ def train_dino_in_embedding_space(model_key, embedded_training_config_dict):
 	#################################################################################
 	# Save training metrics results to disk							                #
 	#################################################################################
+	network_serialization_config_dict = config_dict['network_serialization']
+	save_name = network_serialization_config_dict['network_name']
 	# logger = {'reduced':training_logger} #,'full': final_logger}
 	logging_dir = 'logging/'
 	# Involves Disk I/O
 	makedirs(logging_dir, exist_ok = True)
-	with open(logging_dir+config_dict['network_serialization']['network_name'] +'.pkl', 'wb+') as file:
+	with open(logging_dir+save_name +'.pkl', 'wb+') as file:
 		pickle.dump(training_results_dict, file, pickle.HIGHEST_PROTOCOL)
 
 	#################################################################################
 	# Save neural network parameters to disk (serialize the equinox pytrees)        #
 	#################################################################################
     # Involves Disk I/O
-	eqx.tree_serialise_leaves(
-		f"{config_dict['network_serialization']['network_name'] }.eqx",
-		trained_regressor)
+	if network_serialization_config_dict['save_weights']:
+		eqx.tree_serialise_leaves(
+			f"{network_serialization_config_dict['weights_dir']}{save_name}.eqx",
+			trained_regressor)
 		
 	#################################################################################
 	# Save config file for reproducibility                                          #
@@ -233,6 +238,5 @@ def train_dino_in_embedding_space(model_key, embedded_training_config_dict):
 	# Involves Disk I/O
 	makedirs(cli_dir, exist_ok = True)
 	#does the name tell you everything? we won't vary other parameters, yea?
-	with open(cli_dir+config_dict['network_serialization']['network_name'] +'.pkl', 'wb+') as file:
+	with open(cli_dir+save_name +'.pkl', 'wb+') as file:
 		pickle.dump(config_dict, file, pickle.HIGHEST_PROTOCOL)
-	print("Total time", time.time() - start_time)

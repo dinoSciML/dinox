@@ -34,7 +34,7 @@ def slice_data(X: jax.Array, Y: jax.Array, dYdX: jax.Array, batch_size: int, end
 def load_data_disk_direct_to_gpu(data_config_dict):
 	data_dir = data_config_dict['data_dir']
 	N = data_config_dict['N']
-	X_filename, Y_filename, dYdX_filename = data_config_dict['data_file_names']
+	X_filename, Y_filename, dYdX_filename = data_config_dict['data_filenames']
 
 	X = jnp.asarray(np.fromfile(data_dir+X_filename, like=LikeWrapper(np.empty(())),offset=128),dtype=np.float64).reshape((N,-1))
 	Y = jnp.asarray(np.fromfile(data_dir+Y_filename, like=LikeWrapper(np.empty(())),offset=128)).reshape((N,-1))
