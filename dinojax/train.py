@@ -5,6 +5,7 @@ import optax
 import pickle
 import time
 from os import makedirs
+from pathlib import Path
 
 from .data_utilities import (
 	create_array_permuter,
@@ -34,7 +35,7 @@ def train_nn_regressor(*,
 	# Create variable aliases for readability
 	####################################################################################
 	nn = untrained_regressor
-	n_epochs = training_config_dict['optax_epochs']
+	n_epochs = training_config_dict['n_epochs']
 	batch_size = training_config_dict['batch_size']
 	loss_norm_weights = training_config_dict['loss_weights']
 	# shuffle_every_epoch = training_config_dict['shuffle_every_epoch']
@@ -215,13 +216,8 @@ def train_dino_in_embedding_space(model_key, embedded_training_config_dict):
 	network_serialization_config_dict = config_dict['network_serialization']
 	save_name = network_serialization_config_dict['network_name']
 	# logger = {'reduced':training_logger} #,'full': final_logger}
-	
-	# save_to_pickle(logging_dir, save_name, training_results_dict)
 	logging_dir = 'logging/'
-	# Involves Disk I/O
-	makedirs(logging_dir, exist_ok = True)
-	with open(logging_dir+save_name +'.pkl', 'wb+') as file:
-		pickle.dump(training_results_dict, file, pickle.HIGHEST_PROTOCOL)
+	save_to_pickle(Path(logging_dir+save_name), training_results_dict)
 
 	#################################################################################
 	# Save neural network parameters to disk (serialize the equinox pytrees)        #
@@ -236,10 +232,5 @@ def train_dino_in_embedding_space(model_key, embedded_training_config_dict):
 	# Save config file for reproducibility                                          #
 	#################################################################################	
 	cli_dir = 'cli/'
-	# save_to_pickle(cli_dir, save_name, config_dict)
-
 	# Involves Disk I/O
-	makedirs(cli_dir, exist_ok = True)
-	#does the name tell you everything? we won't vary other parameters, yea?
-	with open(cli_dir+save_name +'.pkl', 'wb+') as file:
-		pickle.dump(config_dict, file, pickle.HIGHEST_PROTOCOL)
+	save_to_pickle(Path(cli_dir+save_name), config_dict)

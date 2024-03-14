@@ -19,11 +19,14 @@ import sys
 import numpy as np
 import jax.random as jr
 from argparse import ArgumentParser, BooleanOptionalAction
-
+from typing import Dict, Iterable
 # sys.path.append( os.environ.get('DINOJAX_PATH'))
 sys.path.append('../../../') #temporary
 
 from dinojax import train_dino_in_embedding_space
+
+def subdict(*, parent_dict: Dict, keys: Iterable):
+	return {k: parent_dict[k] for k in keys}
 
 ################################################################################
 # Define CLI arguments 
@@ -45,12 +48,12 @@ parser.add_argument("-network_name", dest='network_name',required=True,  help="o
 
 # Data (Directory Location/Training) parameters
 parser.add_argument("-data_dir", dest='data_dir',required=True,  help="Directory where training data lies",type=str)
-parser.add_argument("-train_data_size", dest='train_data_size',required=False, default = 4500,  help="training data size",type=int)
+parser.add_argument("-train_data_size", dest='train_data_size',required=False, default = 500,  help="training data size",type=int)
 parser.add_argument("-test_data_size", dest='test_data_size',required=False, default = 500,  help="testing data size",type=int)
 
 # Optimization parameters
 parser.add_argument("-optax_optimizer", dest='optax_optimizer',required=False, default = 'adam',  help="Name of the optax optimizer to use",type=str)
-parser.add_argument("-total_epochs", dest='total_epochs',required=False, default = 1000,  help="total epochs for training",type=int)
+parser.add_argument("-n_epochs", dest='n_epochs',required=False, default = 1000,  help="number of epochs for training",type=int)
 parser.add_argument('-batch_size', dest='batch_size', type = int, default = 20, help = 'gradient batch size')
 parser.add_argument('-step_size', '--step_size', type=float, default=1e-3, help="What step size or 'learning rate'?")
 
@@ -66,51 +69,65 @@ parser.add_argument('-encoder_basis', '--encoder_basis', required=False, type=st
 parser.add_argument('-decoder_basis', '--decoder_basis', type=str, default='pod', help="What type of input basis? Choose from [pod] ")
 parser.add_argument('-save_embedded_data', '--save_embedded_data', help="Should we save the embedded training data to disk or just use it in training without saving to disk. WIthout this flag, defaults to false", default=False, action=BooleanOptionalAction)
 # parser.add_argument('-J_data', '--J_data', type=int, default=1, help="Is there J data??? ")
-
-args = parser.parse_args()
-
 ################################################################################
-# Parse arguments and place them in a config dictionary 	    			   #
+# Parse arguments and place them in a heirarchical config dictionary 	       #
 ################################################################################
-args = parser.parse_args()
-problem_config_dict = {} #is this necessary
+cli_args = vars(parser.parse_args())
 
-config_dict = {'nn':{},'data':{},'training':{},'encoder_decoder':{},'network_serialization':{}}
+nn_keys = ('architecture',) #'depth','layer_width', 'activation'
+data_keys =  ('data_dir','train_data_size','test_data_size',) #'data_filenames'
+optimization_keys =  ('step_size','batch_size','optax_optimizer','n_epochs')
+nn_serialization_keys =  ('network_name',)
 
-config_dict['forward_problem'] = problem_config_dict
+#Organize parameters into subdict heirarchy:
+config_dict = {}
+config_dict['nn'] = subdict(parent_dict=cli_args, 				
+									keys=nn_keys)
+config_dict['data'] = subdict(parent_dict=cli_args, 				
+							  keys=data_keys)
+config_dict['training'] = subdict(parent_dict=cli_args, 				
+							  	  keys=optimization_keys)
+config_dict['network_serialization'] = \
+	subdict(parent_dict=cli_args, 				
+			keys=nn_serialization_keys)
+
+# problem_config_dict = {} #is this necessary
+# config_dict['forward_problem'] = problem_config_dict
 
 # Neural Network Architecture parameters
-config_dict['nn']['architecture'] = args.architecture
 config_dict['nn']['depth'] = 6 
 #TODO: CHECK ON THIS, as a functio nof DIMENSION REDUCTION PARMETERS!
 config_dict['nn']['layer_width'] = 2*50 #args.rb_rank 
+config_dict['nn']['activation'] ='gelu'
 # config_dict['nn']['layer_rank'] = 50 #nn_width = 2*args.rb_rank?
-config_dict['nn']['activation'] = 'gelu'
 # config_dict['hidden_layer_dimensions'] = (config_dict['depth']-1)*[config_dict['truncation_dimension']]+[config_dict['fixed_output_rank']]
 
 #Encoder/Decoder parameters
+config_dict['encoder_decoder'] = {}
 config_dict['encoder_decoder']['encode'] = True
 config_dict['encoder_decoder']['decode'] = False
-config_dict['encoder_decoder']['encoder'] = args.encoder_basis
+config_dict['encoder_decoder']['encoder'] = cli_args['encoder_basis']
 config_dict['encoder_decoder']['decoder'] = 'pod' #ignored for now, decode is False
-encoder_decoder_dir = f'{args.data_dir}reduced_bases/' if args.rb_dir=='' else args.rb_dir
-if args.encoder_basis.lower() == 'kle':
+encoder_decoder_dir = f"{cli_args['data_dir']}reduced_bases/" if cli_args['rb_dir']=='' else cli_args['rb_dir']
+encoder_basis = cli_args['encoder_basis'].lower()
+decoder_basis = cli_args['decoder_basis'].lower()
+if encoder_basis == 'kle':
 	encoder_cobasis_filename = 'KLE_cobasis.npy'
 	encoder_basis_filename = 'KLE_basis.npy'
-elif args.encoder_basis.lower() == 'as':
+elif encoder_basis == 'as':
 	encoder_cobasis_filename = 'AS_encoder_cobasis.npy'
 	encoder_basis_filename = 'AS_encoder_basis.npy'
 else:
 	raise
-if 'full_state' in args.data_dir:
-	if args.decoder_basis.lower() == 'pod':
+if 'full_state' in cli_args['data_dir']:
+	if decoder_basis == 'pod':
 		decoder_filename = 'POD_projector.npy'
 	else:
 		decoder_filename = None
 else:
 	decoder_filename = None
 config_dict['encoder_decoder']['save_location'] = \
-	args.data_dir if args.save_embedded_data else None
+	cli_args['data_dir'] if cli_args['save_embedded_data'] else None
 config_dict['encoder_decoder']['encoder_decoder_dir'] = encoder_decoder_dir
 config_dict['encoder_decoder']['encoder_basis_filename'] = encoder_basis_filename
 config_dict['encoder_decoder']['encoder_cobasis_filename'] = encoder_cobasis_filename
@@ -118,9 +135,6 @@ config_dict['encoder_decoder']['decoder_filename'] = decoder_filename
 # config_dict['encoder_decoder']['reduced_data_filenames'] = ('X_reduced.npy','Y_reduced.npy','J_reduced.npy') #these files may not exist
 
 # Data (Directory Location/Training) parameters
-config_dict['data']['data_dir'] = args.data_dir
-config_dict['data']['train_data_size'] = args.train_data_size
-config_dict['data']['test_data_size'] = args.test_data_size
 if config_dict['encoder_decoder']['encode'] or config_dict['encoder_decoder']['decode']:
 	config_dict['data']['data_filenames'] = \
 		('m_data.npy','q_data.npy','J_data.npy')
@@ -129,12 +143,8 @@ else:
 		('m_data.npy','q_data.npy','J_data.npy')
 
 # Optimization parameters
-config_dict['training']['step_size'] = args.step_size
-config_dict['training']['batch_size'] = args.batch_size
-config_dict['training']['optax_optimizer'] = args.optax_optimizer
-config_dict['training']['optax_epochs'] = args.total_epochs
-config_dict['training']['shuffle_every_epoch'] = True
-loss_weights = [args.l2_weight,args.h1_weight]
+# config_dict['training']['shuffle_every_epoch'] = True
+loss_weights = [cli_args['l2_weight'],cli_args['h1_weight']]
 for loss_weight in loss_weights:
 	assert loss_weight >= 0
 config_dict['training']['loss_weights'] = loss_weights
@@ -142,14 +152,15 @@ config_dict['training']['loss_weights'] = loss_weights
 # config_dict['truncation_dimension'] = args.truncation_dimension
 
 # Deserializing / Serializing Neural Network settings
-config_dict['network_serialization']['network_name'] = args.network_name
 config_dict['network_serialization']['save_weights'] = True
 config_dict['network_serialization']['weights_dir'] = 'trained_weights/'
 # config_dict['network_serialization']['initial_guess_path'] = 
 
-if args.l2_weight != 1.0:
-	config_dict['network_serialization']['network_name'] += f'l2_weight_{args.l2_weight}_seed_{args.run_seed}'
-train_dino_in_embedding_space(model_key = jr.PRNGKey(args.run_seed), 
+random_seed = cli_args['run_seed']
+if cli_args['l2_weight'] != 1.0:
+	config_dict['network_serialization']['network_name'] += f"l2_weight_{cli_args['l2_weight']}_seed_{random_seed}"
+
+train_dino_in_embedding_space(model_key = jr.PRNGKey(random_seed), 
 							  embedded_training_config_dict=config_dict)
 
 #2 digits in the F and 1 digit in the Jacobian
