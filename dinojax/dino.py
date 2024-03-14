@@ -4,8 +4,14 @@ import jax.numpy as jnp
 import jax.random as jr
 import equinox as eqx
 import math
+from typing import Any, Callable, Dict
 
-def GenericDenseFactory(*, layer_width, depth, input_size, output_size, key, activation = 'gelu'):
+# This file contains utilitiesfor initializing equinox (build on jax) neural networks
+# def TransformerFactory(), 
+# def ResNetFactory()
+# def CNNFactory()
+
+def GenericDenseFactory(*, layer_width: int, depth: int, input_size: int, output_size: int, key: jr.PRNGKey, activation = 'gelu') -> eqx.Module:
     "DOCUMENT ME"
     return eqx.nn.MLP(in_size = input_size, 
                       out_size=output_size,
@@ -16,7 +22,9 @@ def GenericDenseFactory(*, layer_width, depth, input_size, output_size, key, act
 
 #TODO: implement other Neural Networks
 
-def instantiate_uninitialized_nn(*, key, nn_config_dict):
+def instantiate_uninitialized_nn(*,
+                                 key: jr.PRNGKey,
+                                 nn_config_dict: Dict[str, Any]) -> eqx.Module:
     "DOCUMENT ME"
     if nn_config_dict['architecture'] == 'generic_dense':
         relevant_params = ['layer_width', 'depth', 'input_size', 'output_size', 'activation']
@@ -25,13 +33,15 @@ def instantiate_uninitialized_nn(*, key, nn_config_dict):
         raise("not implemented")
 
 #This is essentially Xavier initialization 
-def truncated_normal(weight: jax.Array, key: jax.random.PRNGKey) -> jax.Array:
+def truncated_normal(weight: jax.Array, key: jr.PRNGKey) -> jax.Array:
     out, in_ = weight.shape
     stddev = math.sqrt(1 / in_)
     return stddev * jax.random.truncated_normal(key, shape=(out, in_), lower=-2, upper=2)
 
 #Initialize the linear layers of a Neural Network with `init_fn` and the jax key
-def init_linear_weights(model, init_fn, key):
+def init_linear_weights(model: eqx.Module,
+                        init_fn: Callable,
+                        key: jr.PRNGKey) -> eqx.Module:
     is_linear = lambda x: isinstance(x, eqx.nn.Linear)
     get_weights = lambda m: [x.weight
                             for x in jax.tree_util.tree_leaves(m, is_leaf=is_linear)
@@ -42,7 +52,9 @@ def init_linear_weights(model, init_fn, key):
     new_model = eqx.tree_at(get_weights, model, new_weights)
     return new_model
     
-def instantiate_nn(*, key, nn_config_dict):
+def instantiate_nn(*,
+                  key: jr.PRNGKey,
+                  nn_config_dict: Dict) -> Tuple[eqx.Module, jr.PRNGKey]:
     """
     This function sets up the dino network for training
     """

@@ -21,6 +21,8 @@ from .metrics import (
 				compute_l2_loss_metrics,
 				create_compute_h1_loss_metrics)
 
+#TODO: f = create_encoder_decoder_nn_from_embedded_dino(nn_regressor, basis, cobasis)
+# Y = f(X)
 
 def train_nn_regressor(*,
 	untrained_regressor,
@@ -216,8 +218,8 @@ def train_dino_in_embedding_space(model_key, embedded_training_config_dict):
 	network_serialization_config_dict = config_dict['network_serialization']
 	save_name = network_serialization_config_dict['network_name']
 	# logger = {'reduced':training_logger} #,'full': final_logger}
-	logging_dir = 'logging/'
-	save_to_pickle(Path(logging_dir+save_name), training_results_dict)
+	logging_dir = 'logging'
+	save_to_pickle(Path(logging_dir,save_name), training_results_dict)
 
 	#################################################################################
 	# Save neural network parameters to disk (serialize the equinox pytrees)        #
@@ -231,6 +233,6 @@ def train_dino_in_embedding_space(model_key, embedded_training_config_dict):
 	#################################################################################
 	# Save config file for reproducibility                                          #
 	#################################################################################	
-	cli_dir = 'cli/'
+	cli_dir = 'cli'
 	# Involves Disk I/O
-	save_to_pickle(Path(cli_dir+save_name), config_dict)
+	save_to_pickle(Path(cli_dir,save_name), config_dict)

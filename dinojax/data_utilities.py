@@ -7,9 +7,9 @@ from jax import vmap
 import numpy as np
 from kvikio.numpy import LikeWrapper
 from pathlib import Path
-from typing import Any, Dict, Iterable, Union, Tuple, TYPE_CHECKING # TypeAlias,
+from typing import Any, Callable, Dict, Iterable, Tuple 
 
-def create_array_permuter(N):
+def create_array_permuter(N) -> Callable:
 	indices = jnp.arange(N)
 	@jax.jit
 	def permute_arrays(
@@ -32,7 +32,7 @@ def slice_data(X: jax.Array, Y: jax.Array, dYdX: jax.Array, batch_size: int, end
 		dynamic_slice_in_dim(Y, end_idx, batch_size), 
 		dynamic_slice_in_dim(dYdX, end_idx, batch_size))
 
-def save_to_pickle(file_path: Path, data: Any):
+def save_to_pickle(file_path: Path, data: Any) -> None:
 	# Involves Disk I/O
 	ext = file_path.suffix
 	if not ext:
@@ -41,7 +41,9 @@ def save_to_pickle(file_path: Path, data: Any):
 	with open(Path.joinpath(file_path, ext), 'wb+') as file:
 		pickle.dump(data, file, pickle.HIGHEST_PROTOCOL)
 
-def load_data_disk_direct_to_gpu(data_config_dict):
+def load_data_disk_direct_to_gpu(data_config_dict: Dict) -> Tuple[jax.Array,
+																  jax.Array,
+																  jax.Array]:
 	data_dir = data_config_dict['data_dir']
 	N = data_config_dict['N']
 	X_filename, Y_filename, dYdX_filename = data_config_dict['data_filenames']

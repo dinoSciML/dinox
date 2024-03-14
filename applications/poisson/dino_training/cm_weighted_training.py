@@ -47,6 +47,8 @@ def main() -> int:
 
 	# Neural Network Architecture parameters
 	cli.add_argument("-architecture", dest='architecture',required=False, default = 'generic_dense', help="architecture type: as_dense or generic_dense",type=str)
+	cli.add_argument("-activation", dest='activation',required=False, default = 'gelu', help="activation type: e.g. 'gelu', 'relu'",type=str)
+	cli.add_argument("-depth", dest='depth',required=False, default = 6, help="NN # of layers (depth): e.g. 6",type=int)
 	# cli.add_argument("-decoder", dest='decoder',required=False, default = 'jjt',  help="output basis: pod or jjt",type=str)
 	cli.add_argument("-fixed_input_rank", dest='fixed_input_rank',required=False, default = 200, help="rank for input of AS network",type=int)
 	cli.add_argument("-fixed_output_rank", dest='fixed_output_rank',required=False, default = 50, help="rank for output of AS network",type=int)
@@ -85,7 +87,8 @@ def main() -> int:
 	# Define the keys for each configuration dict (*_keys is a required naming 
 	# convention here, since we define the configuration dict names by *
 	##################################################################################
-	nn_keys = ('architecture',) #'depth','layer_width', 'activation'
+	#right now this is only for dense.
+	nn_keys = ('architecture', 'depth','activation')  #'layer_width', 
 	data_keys =  ('data_dir','train_data_size','test_data_size',) #'data_filenames'
 	training_keys =  ('step_size','batch_size','optax_optimizer','n_epochs')
 	network_serialization_keys =  ('network_name',)
@@ -103,10 +106,8 @@ def main() -> int:
 	#e.g. nn['generic_dense'] default.
 
 	# Neural Network Architecture parameters
-	config_dict['nn']['depth'] = 6 
 	#TODO: CHECK ON THIS, as a functio nof DIMENSION REDUCTION PARMETERS!
 	config_dict['nn']['layer_width'] = 2*50 #args.rb_rank 
-	config_dict['nn']['activation'] ='gelu'
 	# config_dict['nn']['layer_rank'] = 50 #nn_width = 2*args.rb_rank?
 	# config_dict['hidden_layer_dimensions'] = (config_dict['depth']-1)*[config_dict['truncation_dimension']]+[config_dict['fixed_output_rank']]
 
@@ -117,28 +118,19 @@ def main() -> int:
 	config_dict['encoder_decoder']['encoder'] = cli_args['encoder_basis']
 	config_dict['encoder_decoder']['decoder'] = 'pod' #ignored for now, decode is False
 	encoder_decoder_dir = f"{cli_args['data_dir']}reduced_bases/" if cli_args['rb_dir']=='' else cli_args['rb_dir']
-	encoder_basis = cli_args['encoder_basis'].lower()
-	decoder_basis = cli_args['decoder_basis'].lower()
-	if encoder_basis == 'kle': #better approach?
-		encoder_cobasis_filename = 'KLE_cobasis.npy'
-		encoder_basis_filename = 'KLE_basis.npy' 
-	elif encoder_basis == 'as':
-		encoder_cobasis_filename = 'AS_encoder_cobasis.npy'
-		encoder_basis_filename = 'AS_encoder_basis.npy'
-	else:
-		raise
-	if 'full_state' in cli_args['data_dir']:
-		if decoder_basis == 'pod':
-			decoder_filename = 'POD_projector.npy'
-		else:
-			decoder_filename = None
+	encoder_basis = config_dict['encoder_decoder']['encoder'].upper()
+	decoder_basis = cli_args['decoder_basis'].upper()
+	assert encoder_basis in ('AS','KLE')
+	if 'full_state' in cli_args['data_dir'] and config_dict['encoder_decoder']['decode']:
+		decoder_filename = f'{decoder_basis}_projector.npy'
 	else:
 		decoder_filename = None
+	#save_location means embedded_data_save_dir
 	config_dict['encoder_decoder']['save_location'] = \
 		cli_args['data_dir'] if cli_args['save_embedded_data'] else None
 	config_dict['encoder_decoder']['encoder_decoder_dir'] = encoder_decoder_dir
-	config_dict['encoder_decoder']['encoder_basis_filename'] = encoder_basis_filename
-	config_dict['encoder_decoder']['encoder_cobasis_filename'] = encoder_cobasis_filename
+	config_dict['encoder_decoder']['encoder_basis_filename'] = f'{encoder_basis}_basis.npy' 
+	config_dict['encoder_decoder']['encoder_cobasis_filename'] = f'{encoder_basis}_cobasis.npy'
 	config_dict['encoder_decoder']['decoder_filename'] = decoder_filename
 	# config_dict['encoder_decoder']['reduced_data_filenames'] = ('X_reduced.npy','Y_reduced.npy','J_reduced.npy') #these files may not exist
 
