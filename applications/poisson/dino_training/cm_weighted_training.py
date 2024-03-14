@@ -28,21 +28,10 @@ sys.path.append('../../../') #temporary
 
 from dinojax import train_dino_in_embedding_space #this will be in the train.py file already
 
-def subdict(*, parent_dict: Dict, keys: Iterable):
-	return {k: parent_dict[k] for k in keys}
-import inspect
-def autodict(*args):
-	get_rid_of = ['autodict(', ',', ')', '\n']
-	print(inspect.currentframe())
-	calling_code = inspect.getouterframes(inspect.currentframe())#[0] #[0]
-	print(calling_code)
-	calling_code = calling_code[calling_code.index('autodict'):]
-	for garbage in get_rid_of:
-		calling_code = calling_code.replace(garbage, '')
-	var_names, var_values = calling_code.split(), args
-	dyn_dict = {var_name.removesuffix('_keys'): var_value for var_name, var_value in
-				zip(var_names, var_values)}
-	return dyn_dict
+#WHERE DOES THIS BELONG?
+def sub_dict(*, super_dict: Dict, keys: Iterable):
+	return {k: super_dict[k] for k in keys}
+
 
 def main() -> int:
 	""""""
@@ -51,46 +40,46 @@ def main() -> int:
 	################################################################################
 	from argparse import ArgumentParser, BooleanOptionalAction
 	
-	parser = ArgumentParser(add_help=True)
+	cli = ArgumentParser(add_help=True)
 
 	# Random seed parameter
-	parser.add_argument('-run_seed', '--run_seed', type=int, default=7, help="Seed for NN initialization/ data shuffling / initialization")
+	cli.add_argument('-run_seed', '--run_seed', type=int, default=7, help="Seed for NN initialization/ data shuffling / initialization")
 
 	# Neural Network Architecture parameters
-	parser.add_argument("-architecture", dest='architecture',required=False, default = 'generic_dense', help="architecture type: as_dense or generic_dense",type=str)
-	# parser.add_argument("-decoder", dest='decoder',required=False, default = 'jjt',  help="output basis: pod or jjt",type=str)
-	parser.add_argument("-fixed_input_rank", dest='fixed_input_rank',required=False, default = 200, help="rank for input of AS network",type=int)
-	parser.add_argument("-fixed_output_rank", dest='fixed_output_rank',required=False, default = 50, help="rank for output of AS network",type=int)
-	parser.add_argument("-truncation_dimension", dest='truncation_dimension',required=False, default = 200, help="truncation dimension for low rank networks",type=int)
+	cli.add_argument("-architecture", dest='architecture',required=False, default = 'generic_dense', help="architecture type: as_dense or generic_dense",type=str)
+	# cli.add_argument("-decoder", dest='decoder',required=False, default = 'jjt',  help="output basis: pod or jjt",type=str)
+	cli.add_argument("-fixed_input_rank", dest='fixed_input_rank',required=False, default = 200, help="rank for input of AS network",type=int)
+	cli.add_argument("-fixed_output_rank", dest='fixed_output_rank',required=False, default = 50, help="rank for output of AS network",type=int)
+	cli.add_argument("-truncation_dimension", dest='truncation_dimension',required=False, default = 200, help="truncation dimension for low rank networks",type=int)
 
 	# Neural Network Serialization parameters
-	parser.add_argument("-network_name", dest='network_name',required=True,  help="out name for the saved weights",type=str)
+	cli.add_argument("-network_name", dest='network_name',required=True,  help="out name for the saved weights",type=str)
 
 	# Data (Directory Location/Training) parameters
-	parser.add_argument("-data_dir", dest='data_dir',required=True,  help="Directory where training data lies",type=str)
-	parser.add_argument("-train_data_size", dest='train_data_size',required=False, default = 500,  help="training data size",type=int)
-	parser.add_argument("-test_data_size", dest='test_data_size',required=False, default = 500,  help="testing data size",type=int)
+	cli.add_argument("-data_dir", dest='data_dir',required=True,  help="Directory where training data lies",type=str)
+	cli.add_argument("-train_data_size", dest='train_data_size',required=False, default = 500,  help="training data size",type=int)
+	cli.add_argument("-test_data_size", dest='test_data_size',required=False, default = 500,  help="testing data size",type=int)
 
 	# Optimization parameters
-	parser.add_argument("-optax_optimizer", dest='optax_optimizer',required=False, default = 'adam',  help="Name of the optax optimizer to use",type=str)
-	parser.add_argument("-n_epochs", dest='n_epochs',required=False, default = 1000,  help="number of epochs for training",type=int)
-	parser.add_argument('-batch_size', dest='batch_size', type = int, default = 20, help = 'gradient batch size')
-	parser.add_argument('-step_size', '--step_size', type=float, default=1e-3, help="What step size or 'learning rate'?")
+	cli.add_argument("-optax_optimizer", dest='optax_optimizer',required=False, default = 'adam',  help="Name of the optax optimizer to use",type=str)
+	cli.add_argument("-n_epochs", dest='n_epochs',required=False, default = 1000,  help="number of epochs for training",type=int)
+	cli.add_argument('-batch_size', dest='batch_size', type = int, default = 20, help = 'gradient batch size')
+	cli.add_argument('-step_size', '--step_size', type=float, default=1e-3, help="What step size or 'learning rate'?")
 
 	# Loss function parameters
-	parser.add_argument("-l2_weight", dest='l2_weight',required=False, default = 1.,  help="weight for l2 term",type=float)
-	parser.add_argument("-h1_weight", dest='h1_weight',required=False, default = 1.,  help="weight for h1 term",type=float)
+	cli.add_argument("-l2_weight", dest='l2_weight',required=False, default = 1.,  help="weight for l2 term",type=float)
+	cli.add_argument("-h1_weight", dest='h1_weight',required=False, default = 1.,  help="weight for h1 term",type=float)
 
 	# Encoder/Decoder parameters
-	parser.add_argument('-rb_dir', '--rb_dir', type=str, default='../reduced_bases/', help="Where are the reduced bases")
-	parser.add_argument('-encoder_basis', '--encoder_basis', required=False, type=str, default='as', help="What type of input basis? Choose from [kle, as] ")
-	parser.add_argument('-decoder_basis', '--decoder_basis', type=str, default='pod', help="What type of input basis? Choose from [pod] ")
-	parser.add_argument('-save_embedded_data', '--save_embedded_data', help="Should we save the embedded training data to disk or just use it in training without saving to disk. WIthout this flag, defaults to false", default=False, action=BooleanOptionalAction)
-	# parser.add_argument('-J_data', '--J_data', type=int, default=1, help="Is there J data??? ")
+	cli.add_argument('-rb_dir', '--rb_dir', type=str, default='../reduced_bases/', help="Where are the reduced bases")
+	cli.add_argument('-encoder_basis', '--encoder_basis', required=False, type=str, default='as', help="What type of input basis? Choose from [kle, as] ")
+	cli.add_argument('-decoder_basis', '--decoder_basis', type=str, default='pod', help="What type of input basis? Choose from [pod] ")
+	cli.add_argument('-save_embedded_data', '--save_embedded_data', help="Should we save the embedded training data to disk or just use it in training without saving to disk. WIthout this flag, defaults to false", default=False, action=BooleanOptionalAction)
+	# cli.add_argument('-J_data', '--J_data', type=int, default=1, help="Is there J data??? ")
 	################################################################################
 	# Parse arguments and place them in a heirarchical config dictionary 	       #
 	################################################################################
-	cli_args = vars(parser.parse_args())
+	cli_args = vars(cli.parse_args())
 
 	###################################################################################
 	# Define the keys for each configuration dict (*_keys is a required naming 
@@ -101,7 +90,7 @@ def main() -> int:
 	training_keys =  ('step_size','batch_size','optax_optimizer','n_epochs')
 	network_serialization_keys =  ('network_name',)
 	config_dict = \
-		{k.removesuffix('_keys'): subdict(parent_dict = cli_args, keys = v) 
+		{k.removesuffix('_keys'): sub_dict(super_dict = cli_args, keys = v) 
 		for k, v in locals().items() if k.endswith('_keys')
 		}
 	print(config_dict)
