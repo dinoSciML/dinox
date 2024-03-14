@@ -9,6 +9,7 @@ from os import makedirs
 from .data_utilities import (
 	create_array_permuter,
     load_data_disk_direct_to_gpu,
+	save_to_pickle,
 	slice_data,
     split_training_testing_data)
 from .dino import instantiate_nn
@@ -73,11 +74,9 @@ def train_nn_regressor(*,
 	####################################################################################
 	# Setup, instantiate and initialize the optax optimizer 						   #
 	####################################################################################
-	if False:
+	if True:
 		# LR scheduling does not seem to help in this case, but this is how you do it. 
-		train_steps_per_epoch = int(training_config_dict['train_data_size']/ batch_size )
-		num_train_steps = n_epochs*train_steps_per_epoch
-
+		num_train_steps = n_epochs*n_train_batches
 		print('Using piecewise lr schedule')
 		lr_schedule = optax.piecewise_constant_schedule(
 			init_value =training_config_dict['step_size'],
@@ -216,6 +215,8 @@ def train_dino_in_embedding_space(model_key, embedded_training_config_dict):
 	network_serialization_config_dict = config_dict['network_serialization']
 	save_name = network_serialization_config_dict['network_name']
 	# logger = {'reduced':training_logger} #,'full': final_logger}
+	
+	# save_to_pickle(logging_dir, save_name, training_results_dict)
 	logging_dir = 'logging/'
 	# Involves Disk I/O
 	makedirs(logging_dir, exist_ok = True)
@@ -235,6 +236,8 @@ def train_dino_in_embedding_space(model_key, embedded_training_config_dict):
 	# Save config file for reproducibility                                          #
 	#################################################################################	
 	cli_dir = 'cli/'
+	# save_to_pickle(cli_dir, save_name, config_dict)
+
 	# Involves Disk I/O
 	makedirs(cli_dir, exist_ok = True)
 	#does the name tell you everything? we won't vary other parameters, yea?
