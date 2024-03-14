@@ -47,15 +47,23 @@ encoder_decoder_config_dict['encoder_basis_filename'] = encoder_basis_filename
 encoder_decoder_config_dict['encoder_cobasis_filename'] = encoder_cobasis_filename
 encoder_decoder_config_dict['decoder_filename'] = decoder_filename
 
+# #TEMPORARY, until I modify the data generator to save m_data, q_data, J_data separately:
+mq_data = np.load(training_data_dir+'mq_data.npz')
+N = mq_data['m_data'].shape[0]
+# np.save(training_data_dir+'m_data.npy', mq_data['m_data'])
+# np.save(training_data_dir+'q_data.npy', mq_data['q_data'])
+# np.save(training_data_dir+"J_data.npy", np.load(training_data_dir+'JstarPhi_data.npz')['JstarPhi_data'])
+del mq_data
+# # END OF TEMPORARY
+
 training_data_dict = {'data_dir':training_data_dir,
-					  'data_file_names': ('m_data','u_data','J_data')}
+					  'data_file_names': ('m_data.npy','q_data.npy','J_data.npy'),
+					  'N':N}
 training_data =  load_data_from_disk(training_data_dict) # Involves Disk I/O
+
 embed_data_in_encoder_decoder_subspaces(
 	training_data,
 	encoder_decoder_config_dict
 	)
-
-
-
 
 

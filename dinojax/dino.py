@@ -1,88 +1,76 @@
 import jax
-import jax.numpy as jnp
-from flax import linen as nn
-
-def create_module_jacobian(module, mode="forward"):
-    def forward_pass(params, x):
-        return module.apply(params, jnp.expand_dims(x, 0))[0]
-    
-    if mode == "forward":
-        jac = jax.jacfwd(forward_pass, argnums=1)
-    elif mode == "reverse":
-        jac = jax.jacrev(forward_pass, argnums=1)
-    else:
-        raise ValueError("Incorrect AD mode")
-
-    return jax.jit(jax.vmap(jac, (None, 0)))
-
-class DINO(nn.Module): #flax dino
-    def __init__(self, network):
-        super(DINO, self).__init__()
-        self.network = network
-
-        self.network_jacobian = jax.jit(create_module_jacobian(network))
-
-    def init(self,*args,**kwargs):
-        return self.network.init(*args,**kwargs)
-
-    def apply_fn(self,params,x, **kwargs):
-        function_value = jax.jit(self.network.apply)(params,x)
-        jacobian_value = self.network_jacobian(params,x)
-        return function_value, jacobian_value
-
 import jax.nn
+import jax.numpy as jnp
+import jax.random as jr
+import equinox as eqx
+import math
 
-def GenericDenseFactory(*, layer_width, depth, input_size, output_size, activation = 'gelu'):
+def GenericDenseFactory(*, layer_width, depth, input_size, output_size, key, activation = 'gelu'):
     "DOCUMENT ME"
-    return eqx.nn.MLP(in_size = input_size, out_size=output_size, width_size=width_size, depth=depth, activation=jax.nn.__dict__[activation], key=model_key)
+    return eqx.nn.MLP(in_size = input_size, 
+                      out_size=output_size,
+                      width_size=layer_width,
+                      depth=depth,
+                      activation=jax.nn.__dict__[activation],
+                      key=key)
 
 #TODO: implement other Neural Networks
 
-def instantiate_uninitialized_nn(nn_config_dict):
+def instantiate_uninitialized_nn(*, key, nn_config_dict):
     "DOCUMENT ME"
-    if nn_config_dict['architecture'] is 'generic_dense':
-        relevant_keys = ['layer_width', 'depth', 'input_size', 'output_size', 'activation']
-        return GenericDenseFactory(**{key: nn_config_dict[key] for key in relevant_keys})
+    if nn_config_dict['architecture'] == 'generic_dense':
+        relevant_params = ['layer_width', 'depth', 'input_size', 'output_size', 'activation']
+        return GenericDenseFactory(**{k: nn_config_dict[k] for k in relevant_params}, key=key)
     else:
         raise("not implemented")
 
-def instantiate_nn(model_seed, nn_config_dict):
+#This is essentially Xavier initialization 
+def truncated_normal(weight: jax.Array, key: jax.random.PRNGKey) -> jax.Array:
+    out, in_ = weight.shape
+    stddev = math.sqrt(1 / in_)
+    return stddev * jax.random.truncated_normal(key, shape=(out, in_), lower=-2, upper=2)
+
+#Initialize the linear layers of a Neural Network with `init_fn` and the jax key
+def init_linear_weights(model, init_fn, key):
+    is_linear = lambda x: isinstance(x, eqx.nn.Linear)
+    get_weights = lambda m: [x.weight
+                            for x in jax.tree_util.tree_leaves(m, is_leaf=is_linear)
+                            if is_linear(x)]
+    weights = get_weights(model)
+    new_weights = [init_fn(weight, subkey)
+                    for weight, subkey in zip(weights, jax.random.split(key, len(weights)))]
+    new_model = eqx.tree_at(get_weights, model, new_weights)
+    return new_model
+    
+def instantiate_nn(*, key, nn_config_dict):
     """
     This function sets up the dino network for training
     """
     ################################################################################
     # Set up the neural network
     ################################################################################
-    eqx_nn_regressor = instantiate_uninitialized_nn(nn_config_dict)
+    eqx_nn_regressor = \
+        instantiate_uninitialized_nn(key=key, nn_config_dict = nn_config_dict)
 
     ################################################################################
-    # Random seed
+    # Random seed                                                                  #
     ################################################################################
-    permute_key, model_key = jr.split(jr.PRNGKey(model_seed), 2)
+    permute_key, model_key = jr.split(key, 2)
 
     ################################################################################
-    # Load equinox NN parameter checkpoint (as an initial guess for optimization)
-    # into equinox NN model (pytrees)
+    # Load equinox NN parameter checkpoint (as an initial guess for optimization)  #
+    # into equinox NN model (pytrees)                                              #
     ################################################################################
     jax_serialized_params_path = nn_config_dict.get('initial_guess_path')
     if jax_serialized_params_path:
         assert os.path.isfile(jax_serialized_params_path), 'Trained weights may not exist as specified: '+str(jax_serialized_params_path)
         eqx_nn_regressor = eqx.tree_deserialise_leaves(
             jax_serialized_params_path, 
-            regrequinox_nn_regressoressor)
+            eqx_nn_regressor)
     else:
-        pass
-        #TODO: intialize jax neural network wieghts with random weights!!!!
-        # use model_key to initialize model
-        # #INITIALIZE WITH DEFAULT WEIGHT APPROACH
-
-        # @jit
-        # def initialize(params_rng):
-        #     init_rngs = {'params': params_rng}
-        #     input_shape = (1, dM)
-        #     variables = network.init(init_rngs, jnp.ones(input_shape, jnp.float32))
-        #     return variables
-
-        # eqx_nn_regressor.init(model_key)
-
-    return eqx_nn_regressor
+        ################################################################################
+        # Random initializaiton of equinox NN layers                                   #
+        ################################################################################
+        eqx_nn_regressor = \
+            init_linear_weights(eqx_nn_regressor, truncated_normal, model_key)
+    return eqx_nn_regressor, permute_key
