@@ -17,7 +17,7 @@
 
 #Typical Useage: python train.py --CLI args... 
 #				nn = train_dino_in_embedding_space(config_dict)
-#				train_nn_regressor(data,...)
+#				train_nn_approximator(data,...)
 import sys
 import numpy as np
 import jax.random as jr
@@ -26,11 +26,9 @@ from typing import Dict, Iterable
 # sys.path.append( os.environ.get('DINOJAX_PATH'))
 sys.path.append('../../../') #temporary
 
-from dinojax import train_dino_in_embedding_space #this will be in the train.py file already
+from dinox import train_dino_in_embedding_space, sub_dict #this will be in the train.py file already
 
 #WHERE DOES THIS BELONG?
-def sub_dict(*, super_dict: Dict, keys: Iterable):
-	return {k: super_dict[k] for k in keys}
 
 
 def main() -> int:
@@ -43,12 +41,12 @@ def main() -> int:
 	cli = ArgumentParser(add_help=True)
 
 	# Random seed parameter
-	cli.add_argument('-run_seed', '--run_seed', type=int, default=7, help="Seed for NN initialization/ data shuffling / initialization")
+	cli.add_argument('-run_seed', '--run_seed', type=int, default=777, help="Seed for NN initialization/ data shuffling / initialization")
 
 	# Neural Network Architecture parameters
 	cli.add_argument("-architecture", dest='architecture',required=False, default = 'generic_dense', help="architecture type: as_dense or generic_dense",type=str)
 	cli.add_argument("-activation", dest='activation',required=False, default = 'gelu', help="activation type: e.g. 'gelu', 'relu'",type=str)
-	cli.add_argument("-depth", dest='depth',required=False, default = 6, help="NN # of layers (depth): e.g. 6",type=int)
+	cli.add_argument("-depth", dest='depth',required=False, default = 7, help="NN # of layers (depth): e.g. 6",type=int)
 	# cli.add_argument("-decoder", dest='decoder',required=False, default = 'jjt',  help="output basis: pod or jjt",type=str)
 	cli.add_argument("-fixed_input_rank", dest='fixed_input_rank',required=False, default = 200, help="rank for input of AS network",type=int)
 	cli.add_argument("-fixed_output_rank", dest='fixed_output_rank',required=False, default = 50, help="rank for output of AS network",type=int)
@@ -59,18 +57,19 @@ def main() -> int:
 
 	# Data (Directory Location/Training) parameters
 	cli.add_argument("-data_dir", dest='data_dir',required=True,  help="Directory where training data lies",type=str)
-	cli.add_argument("-train_data_size", dest='train_data_size',required=False, default = 500,  help="training data size",type=int)
-	cli.add_argument("-test_data_size", dest='test_data_size',required=False, default = 500,  help="testing data size",type=int)
+	cli.add_argument("-train_data_size", dest='train_data_size',required=False, default = 2000,  help="training data size",type=int)
+	cli.add_argument("-test_data_size", dest='test_data_size',required=False, default = 3000,  help="testing data size",type=int)
 
 	# Optimization parameters
 	cli.add_argument("-optax_optimizer", dest='optax_optimizer',required=False, default = 'adam',  help="Name of the optax optimizer to use",type=str)
-	cli.add_argument("-n_epochs", dest='n_epochs',required=False, default = 1000,  help="number of epochs for training",type=int)
-	cli.add_argument('-batch_size', dest='batch_size', type = int, default = 20, help = 'gradient batch size')
-	cli.add_argument('-step_size', '--step_size', type=float, default=1e-3, help="What step size or 'learning rate'?")
+	cli.add_argument("-n_epochs", dest='n_epochs',required=False, default = 10000,  help="number of epochs for training",type=int)
+	cli.add_argument('-batch_size', dest='batch_size', type = int, default = 100, help = 'batch size')
+	cli.add_argument('-step_size', '--step_size', type=float, default=1e-4, help="What step size or 'learning rate'?")
 
 	# Loss function parameters
 	cli.add_argument("-l2_weight", dest='l2_weight',required=False, default = 1.,  help="weight for l2 term",type=float)
 	cli.add_argument("-h1_weight", dest='h1_weight',required=False, default = 1.,  help="weight for h1 term",type=float)
+	
 
 	# Encoder/Decoder parameters
 	cli.add_argument('-rb_dir', '--rb_dir', type=str, default='../reduced_bases/', help="Where are the reduced bases")
@@ -97,6 +96,8 @@ def main() -> int:
 		for k, v in locals().items() if k.endswith('_keys')
 		}
 	print(config_dict)
+	#ESS, max weight, 3rd order moment, k-fold cross validation
+
 	
 	# problem_config_dict = {} #is this necessary
 	# config_dict['forward_problem'] = problem_config_dict
@@ -129,8 +130,8 @@ def main() -> int:
 	config_dict['encoder_decoder']['save_location'] = \
 		cli_args['data_dir'] if cli_args['save_embedded_data'] else None
 	config_dict['encoder_decoder']['encoder_decoder_dir'] = encoder_decoder_dir
-	config_dict['encoder_decoder']['encoder_basis_filename'] = f'{encoder_basis}_basis.npy' 
-	config_dict['encoder_decoder']['encoder_cobasis_filename'] = f'{encoder_basis}_cobasis.npy'
+	config_dict['encoder_decoder']['encoder_basis_filename'] = f'{encoder_basis}_encoder_basis.npy' 
+	config_dict['encoder_decoder']['encoder_cobasis_filename'] = f'{encoder_basis}_encoder_cobasis.npy'
 	config_dict['encoder_decoder']['decoder_filename'] = decoder_filename
 	# config_dict['encoder_decoder']['reduced_data_filenames'] = ('X_reduced.npy','Y_reduced.npy','J_reduced.npy') #these files may not exist
 
@@ -143,7 +144,6 @@ def main() -> int:
 			('m_data.npy','q_data.npy','J_data.npy')
 
 	# Optimization parameters
-	# config_dict['training']['shuffle_every_epoch'] = True
 	loss_weights = [cli_args['l2_weight'],cli_args['h1_weight']]
 	for loss_weight in loss_weights:
 		assert loss_weight >= 0
@@ -160,12 +160,9 @@ def main() -> int:
 	if cli_args['l2_weight'] != 1.0:
 		config_dict['network_serialization']['network_name'] += f"l2_weight_{cli_args['l2_weight']}_seed_{random_seed}"
 
-	train_dino_in_embedding_space(model_key = jr.PRNGKey(random_seed), 
+	train_dino_in_embedding_space(model_key = jr.key(random_seed), 
 								embedded_training_config_dict=config_dict)
-	return 0
-
-#2 digits in the F and 1 digit in the Jacobian
-
+	return 0 
 
 # TODO: put this into train.py
 if __name__ == '__main__':

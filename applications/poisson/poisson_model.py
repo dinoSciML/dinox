@@ -15,21 +15,21 @@
 # Author: Tom O'Leary-Roseberry
 # Contact: tom.olearyroseberry@utexas.edu
 
-import dolfin as dl
-import ufl
 import math
-import numpy as np
-import matplotlib.pyplot as plt
-import sys
 import os
+import sys
+
+import dolfin as dl
+import matplotlib.pyplot as plt
+import numpy as np
+import ufl
 
 sys.path.append(os.environ.get("HIPPYLIB_PATH", "../"))
 import hippylib as hp
 
 sys.path.append(os.environ.get("HIPPYFLOW_PATH"))
-import hippyflow as hf
-
 import logging
+
 
 logging.getLogger("FFC").setLevel(logging.WARNING)
 logging.getLogger("UFL").setLevel(logging.WARNING)
@@ -64,7 +64,6 @@ def poisson_settings(settings={}):
     settings["seed"] = 1
 
     return settings
-
 
 
 def poisson_model(settings=poisson_settings()):
@@ -145,14 +144,5 @@ def poisson_model(settings=poisson_settings()):
     misfit = hp.PointwiseStateObservation(Vh[hp.STATE], targets)
 
     model = hp.Model(pde, prior, misfit)
-
-    # mw_settings = hf.hippylibModelWrapperSettings()
-    # mw_settings["rel_noise"] = settings["rel_noise"]
-    # mw_settings["seed"] = settings["seed"]
-
-    # modelwrapper = hf.hippylibModelWrapper(model, settings=mw_settings)
-    # modelwrapper.targets = targets
-    # # Setup the inverse problem
-    # modelwrapper.setUpInverseProblem()
 
     return model
