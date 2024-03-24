@@ -1,2 +1,2 @@
 # dinox
-Implementation of derivative informed neural operators in jax
+Implementation of `derivative informed neural operators` in `jax`. Build ideally for single GPU environments-- and specifically where `all-data-can-fit-in-gpu-memory`. In the future, this code will be generalized for the setting in which one has multiple GPUs and would like to take advantage. It will also be generalized to account for big-data (where not all samples can fit in gpu or cpu memory). 
