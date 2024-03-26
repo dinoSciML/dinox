@@ -53,9 +53,11 @@ def GenericDenseFactory(
 
 
 def instantiate_uninitialized_nn(
-    *, key: jr.PRNGKey, nn_config_dict: Dict[str, Any]
+    *, nn_config_dict: Dict[str, Any], key: jr.PRNGKey=jr.key(0)
 ) -> eqx.Module:
     "DOCUMENT ME"
+    #by default uses random seed = 0, if one does not actually need the initialization
+    #i.e. if we are going to reinitialize the weights anyways
     # No side effects
     if nn_config_dict["architecture"] == "generic_dense":
         relevant_params = [
@@ -101,9 +103,8 @@ def __init_linear_layer_weights(
     new_model = eqx.tree_at(get_weights, model, new_weights)
     return new_model
 
-
 def instantiate_nn(
-    *, key: jr.PRNGKey, nn_config_dict: Dict
+    *, nn_config_dict: Dict, key: jr.PRNGKey=jr.key(0)
 ) -> Tuple[eqx.Module, jr.PRNGKey]:
     """
     This function sets up the dino network for training
@@ -113,7 +114,7 @@ def instantiate_nn(
     # Set up the neural network
     ################################################################################
     eqx_nn_approximator = instantiate_uninitialized_nn(
-        key=key, nn_config_dict=nn_config_dict
+        nn_config_dict=nn_config_dict, key=key
     )
 
     ################################################################################
@@ -125,7 +126,7 @@ def instantiate_nn(
     # Load equinox NN parameter checkpoint (as an initial guess for optimization)  #
     # into equinox NN model (pytrees)                                              #
     ################################################################################
-    jax_serialized_params_path = nn_config_dict.get("initial_guess_path")
+    jax_serialized_params_path = nn_config_dict.get("nn_checkpoint_path")
     if jax_serialized_params_path:
         assert os.path.isfile(
             jax_serialized_params_path

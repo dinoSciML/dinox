@@ -1,0 +1,21 @@
+name: dinox_env
+channels:
+  - rapidsai
+  - nvidia
+  - conda-forge
+dependencies:
+  - cuda-nvcc=12.3.107=0
+  - cudatoolkit=11.8.0=h4ba93d1_13
+  - cudnn=8.8.0.121=hcdd5f01_4
+  - cupy=13.0.0=py310h189a05f_3
+  - jax=0.4.25=pyhd8ed1ab_0
+  - kvikio=24.02.01=cuda11_py310_240226_gfe01c15_0
+  - opt_einsum=3.3.0=pyhc1e730c_2
+  - optax=0.2.1=pyhd8ed1ab_0
+  - pip=24.0=pyhd8ed1ab_0
+  - poetry=1.8.2=linux_pyha804496_0
+  - poetry-core=1.9.0=pyhd8ed1ab_0
+  - poetry-plugin-export=1.7.1=pyhd8ed1ab_0
+  - python=3.10.14=hd12c33a_0_cpython
+  - pip:
+      - equinox==0.11.3
