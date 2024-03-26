@@ -6,11 +6,7 @@ Implementation of **Derivative Informed Neural Operators** in `jax`. Build for f
 
 Create a brand new environment. Use `mamba` in place of `conda` if you can.
 ```
-conda create -n dinox_env -c nvidia -c conda-forge -c rapidsai python=3.10 cupy=13.0.0 cudnn=8.8.0.121 cuda-nvcc=12.3.107 cudatoolkit=11.8.0 jax=0.4.25 kvikio=24.02.01 optax=0.1.9 opt_einsum=3.3.0
-#The below can be updated without any problems
-conda update optax 
-conda update opt_einsum
-conda update cupy
+conda env create -f environment.yml
 pip install equinox
 ```
 # Running dinox

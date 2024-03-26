@@ -117,6 +117,14 @@ def save_to_pickle(file_path: Path, data: Any) -> None:
     with open(Path.joinpath(file_path, ext), "wb+") as file:
         pickle.dump(data, file, pickle.HIGHEST_PROTOCOL)
 
+def load_pickle(file_path: Path, data: Any) -> None:
+    # Involves Disk I/O
+    ext = file_path.suffix
+    if not ext:
+        ext = ".pkl"
+    with open(Path.joinpath(file_path, ext), "rb") as file:
+        deserialized =  pickle.load(data, file, pickle.HIGHEST_PROTOCOL)
+    return deserialized
 
 def __load_jax_array_with_shape_direct_to_gpu(file_path, shape):
     # assumes float64

@@ -44,8 +44,7 @@ def train_nn_approximator(
     training_data,
     testing_data,
     permute_key,
-    training_config_dict,
-    training_results_dict,
+    training_config_dict
 ):
     # DOCUMENT ME, remainder not allowed
     # returns the trained equinox nn and results dictionary
@@ -192,6 +191,7 @@ def train_nn_approximator(
         # print('The metrics took', metric_time, 's')
 
     # metrics_history_train and metrics_history_test are stored as N_iters x 3
+    training_results_dict = {}
     (
         training_results_dict["train_accuracy_l2"],
         training_results_dict["train_accuracy_h1"],
@@ -203,7 +203,7 @@ def train_nn_approximator(
         training_results_dict["test_loss"],
     ) = metrics_history_test.T
     # print("Total time", time.time() - start_time)
-    return training_results_dict, nn
+    return nn, training_results_dict
 
 
 def train_dino_in_embedding_space(random_seed, embedded_training_config_dict):
@@ -246,23 +246,22 @@ def train_dino_in_embedding_space(random_seed, embedded_training_config_dict):
     #################################################################################
     # Set up the neural network and train it										#
     #################################################################################
-    training_results_dict = {}
     nn_config_dict = config_dict["nn"]
     nn_config_dict["input_size"] = training_data[0].shape[1]
     nn_config_dict["output_size"] = training_data[1].shape[1]
     untrained_approximator, permute_key = instantiate_nn(
-        key=jr.key(random_seed), nn_config_dict=nn_config_dict
+        nn_config_dict=nn_config_dict,
+        key=jr.key(random_seed)
     )
     config_dict["training"]["data"] = config_dict[
         "data"
     ]  # hack for test/train splitting
-    trained_approximator = train_nn_approximator(
+    trained_approximator, training_results_dict = train_nn_approximator(
         untrained_approximator=untrained_approximator,
         training_data=training_data,
         testing_data=testing_data,
         permute_key=permute_key,
         training_config_dict=config_dict["training"],
-        training_results_dict=training_results_dict,
     )
 
     #################################################################################
@@ -283,7 +282,7 @@ def train_dino_in_embedding_space(random_seed, embedded_training_config_dict):
             f"{network_serialization_config_dict['weights_dir']}{save_name}.eqx",
             trained_approximator,
         )
-
+        save_to_pickle(Path(network_serialization_config_dict['weights_dir'], save_name), training_results_dict)
     #################################################################################
     # Save config file for reproducibility                                          #
     #################################################################################
