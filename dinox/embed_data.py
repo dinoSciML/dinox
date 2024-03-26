@@ -1,12 +1,30 @@
+# This file is part of the dinox package
+#
+# dinox is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Lesser General Public License as published by
+# the Free Software Foundation, either version 2 of the License, or any later version.
+#
+# dinox is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Lesser General Public License for more details.
+#
+# You should have received a copy of the GNU Lesser General Public License
+# If not, see <http://www.gnu.org/licenses/>.
+#
+# Authors: Joshua Chen and Tom O'Leary-Roseberry
+# Contact: joshuawchen@icloud.com | tom.olearyroseberry@utexas.edu
+
 from typing import Dict, Tuple
 
 import jax
 import jax.numpy as jnp
-from kvikio.numpy import LikeWrapper
-import numpy as np
-from opt_einsum import contract
-from .data_utilities import load_jax_array_with_shape_direct_to_gpu
+from kvikio.numpy import LikeWrapper  # kvikio is optional dependency?
+from opt_einsum import contract  # opt_einsum is a dependency
 
+from .data_utilities import __load_jax_array_with_shape_direct_to_gpu
+
+#TODO: python dinox.embed_data --cli_args which uses the CLI arguments from reduce_data.py (deprecated -- to be removed) 
 def embed_data_in_encoder_decoder_subspaces(
     input_output_data: Tuple[jax.Array], encoder_decoder_config_dict: Dict
 ) -> Tuple[jax.Array]:
@@ -28,55 +46,64 @@ def embed_data_in_encoder_decoder_subspaces(
     else:
         X, Y = input_output_data
         dYdX = None
-    reduced_X = \
-        contract(
-                "dm,mr->dr",
-                X,
-                load_jax_array_with_shape_direct_to_gpu(
-                    encoder_decoder_dir + encoder_basis_filename, (X.shape[1],-1)),
-                backend='jax'
-            )
-    
+    reduced_X = contract(
+        "dm,mr->dr",
+        X,
+        __load_jax_array_with_shape_direct_to_gpu(
+            encoder_decoder_dir + encoder_basis_filename, (X.shape[1], -1)
+        ),
+        backend="jax",
+    )
+
     reduced_Y = (
         contract(
-                "du,ur->dr",
-                Y,
-                load_jax_array_with_shape_direct_to_gpu(
-                    encoder_decoder_dir + decoder_filename, (Y.shape[1],-1)),
-                backend='jax'
-            )
+            "du,ur->dr",
+            Y,
+            __load_jax_array_with_shape_direct_to_gpu(
+                encoder_decoder_dir + decoder_filename, (Y.shape[1], -1)
+            ),
+            backend="jax",
+        )
         if decoder_filename
         else Y
     )
     if save_location:
-        np.save(save_location + "X_reduced.npy", reduced_X)
-        print("Saved embedded training data files.")
-        np.save(save_location + "Y_reduced.npy", reduced_Y)
+        jnp.save(save_location + "X_reduced.npy", reduced_X)
+        jnp.save(save_location + "Y_reduced.npy", reduced_Y)
+        print("Saved embedded training data files to disk.")
     if dYdX is not None:
         #  Load the and project the Jacobian data with the encoder cobasis
         reduced_dYdX = contract(
-                "dmu,mr->dur",
-                dYdX,
-                load_jax_array_with_shape_direct_to_gpu(
-                    encoder_decoder_dir + encoder_cobasis_filename, (X.shape[1],-1)),
-                backend='jax'
-            )
+            "dmu,mr->dur",
+            dYdX,
+            __load_jax_array_with_shape_direct_to_gpu(
+                encoder_decoder_dir + encoder_cobasis_filename, (X.shape[1], -1)
+            ),
+            backend="jax",
+        )
         if save_location is not None:
-            np.save(save_location + "J_reduced.npy", reduced_dYdX)
-            np.savez(
+            jnp.save(save_location + "J_reduced.npy", reduced_dYdX)
+            jnp.savez(
                 save_location + reduced_zip_filename,
                 m_data=reduced_X,
                 q_data=reduced_Y,
                 J_data=reduced_dYdX,
             )
-            print("Saved embedded training data files.")
+            print("Saved zipped embedded training data file to disk.")
         print("Successfully reduced the data.")
         return reduced_X, reduced_Y, reduced_dYdX
     else:
         if save_location is not None:
-            np.savez(
+            jnp.savez(
                 save_location + reduced_zip_filename, m_data=reduced_X, q_data=reduced_Y
             )
-            print("Saved embedded training data files.")
+            print("Saved zipped embedded training data file to disk.")
         print("Successfully reduced the data.")
         return reduced_X, reduced_Y
+
+def main():
+    #TODO: argparse move reduce_data.py CLI to here
+    return 0
+    
+if __name__ == "__main__":
+    sys.exit(main())
