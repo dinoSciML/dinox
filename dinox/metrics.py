@@ -52,9 +52,7 @@ def create_mean_h1_seminorm_l2_errors_and_norms(dM, batch_size):
             nn, dslice(X, end_idx, batch_size)
         )
         mse_i, msje_i = jnp.mean(
-            optax.l2_loss(
-                predicted_Y.squeeze(), dslice(Y, end_idx, batch_size)
-            ),
+            optax.l2_loss(predicted_Y.squeeze(), dslice(Y, end_idx, batch_size)),
             axis=1,
         ), jnp.mean(
             optax.l2_loss(
@@ -70,15 +68,11 @@ def create_mean_h1_seminorm_l2_errors_and_norms(dM, batch_size):
             one_over_n_batches * jnp.mean(msje_i),
             one_over_n_batches
             * jnp.mean(
-                normalize_values(
-                    mse_i, dslice(Y_L2_norms, end_idx, batch_size)
-                )
+                normalize_values(mse_i, dslice(Y_L2_norms, end_idx, batch_size))
             ),
             one_over_n_batches
             * jnp.mean(
-                normalize_values(
-                    msje_i, dslice(dYdX_L2_norms, end_idx, batch_size)
-                )
+                normalize_values(msje_i, dslice(dYdX_L2_norms, end_idx, batch_size))
             ),
         )
 
@@ -89,23 +83,16 @@ def create_mean_h1_seminorm_l2_errors_and_norms(dM, batch_size):
 def mean_l2_norm_errors_and_norms(nn, X, Y, dYdX):
     # No side effects
 
-    predicted_Y, predicted_dYdX = value_and_jacrev(
-        nn, dslice(X, end_idx, batch_size)
-    )
+    predicted_Y, predicted_dYdX = value_and_jacrev(nn, dslice(X, end_idx, batch_size))
     # predicted_Y = predicted_Y.squeeze()
     # predicted_dYdX = predicted_dYdX.squeeze()
     # batch_se  = jnp.mean(optax.l2_loss(predicted_Y.squeeze(), Y),axis=1)
     # batch_sje = jnp.mean(optax.l2_loss(predicted_dYdX.squeeze(), dYdX)*dM,axis=(1,2))
     mse_i, msje_i = jnp.mean(
-        optax.l2_loss(
-            predicted_Y.squeeze(), dslice(Y, end_idx, batch_size)
-        ),
+        optax.l2_loss(predicted_Y.squeeze(), dslice(Y, end_idx, batch_size)),
         axis=1,
     ), jnp.mean(
-        optax.l2_loss(
-            predicted_dYdX.squeeze(), dslice(dYdX, end_idx, batch_size)
-        )
-        * dM,
+        optax.l2_loss(predicted_dYdX.squeeze(), dslice(dYdX, end_idx, batch_size)) * dM,
         axis=(1, 2),
     )
     return (
@@ -116,9 +103,7 @@ def mean_l2_norm_errors_and_norms(nn, X, Y, dYdX):
     one_over_n_batches * jnp.mean(mse_i), one_over_n_batches * jnp.mean(
         normalize_values(mse_i, dslice(Y_L2_norms, end_idx, batch_size))
     ), one_over_n_batches * jnp.mean(
-        normalize_values(
-            msje_i, dslice(dYdX_L2_norms, end_idx, batch_size)
-        )
+        normalize_values(msje_i, dslice(dYdX_L2_norms, end_idx, batch_size))
     )
 
 

@@ -30,6 +30,7 @@ import jax.random as jr
 # def ResNetFactory()
 # def CNNFactory()
 
+
 def GenericDenseFactory(
     *,
     layer_width: int,
@@ -49,6 +50,7 @@ def GenericDenseFactory(
         activation=jax.nn.__dict__[activation],
         key=key,
     )
+
 
 def instantiate_uninitialized_nn(
     *, key: jr.PRNGKey, nn_config_dict: Dict[str, Any]
@@ -72,18 +74,19 @@ def instantiate_uninitialized_nn(
 
 # This is essentially Xavier initialization
 def __truncated_normal(weight: jax.Array, key: jr.PRNGKey) -> jax.Array:
-    #No Side effects, jax.random.truncated_normal is a deterministic transformation of key
+    # No Side effects, jax.random.truncated_normal is a deterministic transformation of key
     out, in_ = weight.shape
     stddev = math.sqrt(1 / in_)
     return stddev * jax.random.truncated_normal(
         key, shape=(out, in_), lower=-2, upper=2
     )
 
+
 # Initialize the linear layers of a Neural Network with `init_fn` and the jax key
 def __init_linear_layer_weights(
     model: eqx.Module, init_fn: Callable, key: jr.PRNGKey
 ) -> eqx.Module:
-    #No Side effects, key is split into subkeys
+    # No Side effects, key is split into subkeys
     is_linear = lambda x: isinstance(x, eqx.nn.Linear)
     get_weights = lambda m: [
         x.weight
@@ -105,7 +108,7 @@ def instantiate_nn(
     """
     This function sets up the dino network for training
     """
-    #No side effects, permute_key is deterministc, as a funciton of key
+    # No side effects, permute_key is deterministc, as a funciton of key
     ################################################################################
     # Set up the neural network
     ################################################################################
