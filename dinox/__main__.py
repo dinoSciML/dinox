@@ -15,6 +15,7 @@
 # Authors: Joshua Chen and Tom O'Leary-Roseberry
 # Contact: joshuawchen@icloud.com | tom.olearyroseberry@utexas.edu
 
+import os
 ###################################################################
 # To run from CLI: python -m dinox --<cli_args_name> <cli_arg>
 ###################################################################
@@ -23,7 +24,7 @@ from argparse import ArgumentParser, BooleanOptionalAction
 
 from .train import sub_dict, train_dino_in_embedding_space
 
-import os
+
 def main() -> int:
     """"""
     ################################################################################
@@ -61,7 +62,7 @@ def main() -> int:
         "-depth",
         dest="depth",
         required=False,
-        default=8, #8 #6
+        default=8,  # 8 #6
         help="NN # of layers (depth): e.g. 8",
         type=int,
     )

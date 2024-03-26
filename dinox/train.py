@@ -16,7 +16,6 @@
 # Contact: joshuawchen@icloud.com | tom.olearyroseberry@utexas.edu
 
 import sys
-
 # import time
 from pathlib import Path
 
@@ -26,22 +25,14 @@ import jax.numpy as jnp
 import jax.random as jr
 import optax  # optax, eqx are dependencies of dinox
 
-from .data_utilities import (
-    create_array_permuter,
-    load_data_disk_direct_to_gpu,
-    save_to_pickle,
-    slice_data,
-    split_training_testing_data,
-    sub_dict,
-)
-from .nn_factories import instantiate_nn
+from .data_utilities import (create_array_permuter,
+                             load_data_disk_direct_to_gpu, save_to_pickle,
+                             slice_data, split_training_testing_data, sub_dict)
 from .embed_data import embed_data_in_encoder_decoder_subspaces
-from .metrics import (
-    compute_l2_loss_metrics,
-    create_compute_h1_loss_metrics,
-    create_grad_mean_h1_seminorm_loss,
-    grad_mean_l2_norm_loss,
-)
+from .metrics import (compute_l2_loss_metrics, create_compute_h1_loss_metrics,
+                      create_grad_mean_h1_seminorm_loss,
+                      grad_mean_l2_norm_loss)
+from .nn_factories import instantiate_nn
 
 # TODO: f = create_encoder_decoder_nn_from_embedded_dino(nn_approximator, basis, cobasis)
 # Y = f(X)

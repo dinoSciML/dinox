@@ -24,13 +24,14 @@ from opt_einsum import contract  # opt_einsum is a dependency
 
 from .data_utilities import __load_jax_array_with_shape_direct_to_gpu
 
-#TODO: python dinox.embed_data --cli_args which uses the CLI arguments from reduce_data.py (deprecated -- to be removed) 
+
+# TODO: python dinox.embed_data --cli_args which uses the CLI arguments from reduce_data.py (deprecated -- to be removed)
 def embed_data_in_encoder_decoder_subspaces(
     input_output_data: Tuple[jax.Array], encoder_decoder_config_dict: Dict
 ) -> Tuple[jax.Array]:
     # Disk IO side effects, stdout (printing) side effects exist
     # returns reduced X, Y, and possibly dYdX: (if X, Y, dYdX = input_output_data)
-    
+
     # start_time = time.time()
     ################################################################################
     # Grab variables from config												   #
@@ -105,9 +106,11 @@ def embed_data_in_encoder_decoder_subspaces(
         print("Successfully reduced the data.")
         return reduced_X, reduced_Y
 
+
 def main():
-    #TODO: argparse move reduce_data.py CLI to here
+    # TODO: argparse move reduce_data.py CLI to here
     return 0
+
 
 if __name__ == "__main__":
     sys.exit(main())
