@@ -13,6 +13,13 @@ conda update opt_einsum
 conda update cupy
 pip install equinox
 ```
+# Running dinox
+```
+python -m dinox -network_name "<name_to_save_network_as>" -data_dir "<location_of_jacobian_enriched_training_data>"
+```
+
+Currently, assumes data is stored in "m_data.npy", "q_data.npy", "J_data.npy". Will generalize soon for CLI passed in npy filenames, and for memmapped numpy arrays.. 
+
 
 # Notes on why we require these packages:
 - `cupy` - for rapid permuting of data on GPUs
