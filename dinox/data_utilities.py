@@ -31,6 +31,7 @@ from kvikio.numpy import LikeWrapper
 
 
 def sub_dict(*, super_dict: Dict, keys: Iterable):
+    # No side effects
     return {k: super_dict[k] for k in keys}
 
 
@@ -57,6 +58,8 @@ def sub_dict(*, super_dict: Dict, keys: Iterable):
 
 
 def create_array_permuter(N, cp_random_seed=None) -> Callable:
+    # Has side effects! Stateful cp_random_seed
+
     indices = cp.arange(N)
     if cp_random_seed is not None:
         cp.random.seed(cp_random_seed)
@@ -87,6 +90,7 @@ def create_array_permuter(N, cp_random_seed=None) -> Callable:
 def slice_data(
     X: jax.Array, Y: jax.Array, dYdX: jax.Array, batch_size: int, end_idx: int
 ) -> Tuple[jax.Array, jax.Array, jax.Array]:
+    # No side effects
     return (
         end_idx + batch_size,
         dslice(X, end_idx, batch_size),
@@ -133,6 +137,7 @@ def load_data_disk_direct_to_gpu(
 def split_training_testing_data(
     data: Tuple[jax.Array], data_config_dict: Dict, calculate_norms: bool = False
 ) -> Tuple[Tuple[jax.Array], Tuple[jax.Array]]:
+    # No side effects
     n_test = data_config_dict["test_data_size"]
     n_train = data_config_dict["train_data_size"]
     n_train_test = n_train + n_test

@@ -40,6 +40,7 @@ def GenericDenseFactory(
     activation="gelu"
 ) -> eqx.Module:
     "DOCUMENT ME"
+    # No side effects
     return eqx.nn.MLP(
         in_size=input_size,
         out_size=output_size,
@@ -53,6 +54,7 @@ def instantiate_uninitialized_nn(
     *, key: jr.PRNGKey, nn_config_dict: Dict[str, Any]
 ) -> eqx.Module:
     "DOCUMENT ME"
+    # No side effects
     if nn_config_dict["architecture"] == "generic_dense":
         relevant_params = [
             "layer_width",
@@ -70,6 +72,7 @@ def instantiate_uninitialized_nn(
 
 # This is essentially Xavier initialization
 def __truncated_normal(weight: jax.Array, key: jr.PRNGKey) -> jax.Array:
+    #No Side effects, jax.random.truncated_normal is a deterministic transformation of key
     out, in_ = weight.shape
     stddev = math.sqrt(1 / in_)
     return stddev * jax.random.truncated_normal(
@@ -80,6 +83,7 @@ def __truncated_normal(weight: jax.Array, key: jr.PRNGKey) -> jax.Array:
 def __init_linear_layer_weights(
     model: eqx.Module, init_fn: Callable, key: jr.PRNGKey
 ) -> eqx.Module:
+    #No Side effects, key is split into subkeys
     is_linear = lambda x: isinstance(x, eqx.nn.Linear)
     get_weights = lambda m: [
         x.weight
@@ -101,6 +105,7 @@ def instantiate_nn(
     """
     This function sets up the dino network for training
     """
+    #No side effects, permute_key is deterministc, as a funciton of key
     ################################################################################
     # Set up the neural network
     ################################################################################
