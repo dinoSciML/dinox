@@ -7,7 +7,7 @@ Implementation of **Derivative Informed Neural Operators** in `jax`. Build for f
 Create a brand new environment. Use `mamba` in place of `conda` if you can.
 ```
 conda env create -f environment.yml
-pip install equinox
+poetry install
 ```
 # Running dinox
 ```
