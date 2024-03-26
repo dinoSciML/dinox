@@ -28,6 +28,10 @@ from .data_utilities import __load_jax_array_with_shape_direct_to_gpu
 def embed_data_in_encoder_decoder_subspaces(
     input_output_data: Tuple[jax.Array], encoder_decoder_config_dict: Dict
 ) -> Tuple[jax.Array]:
+    # Disk IO side effects, stdout (printing) side effects exist
+    # returns reduced X, Y, and possibly dYdX: (if X, Y, dYdX = input_output_data)
+    
+    # start_time = time.time()
     ################################################################################
     # Grab variables from config												   #
     ################################################################################
@@ -104,6 +108,6 @@ def embed_data_in_encoder_decoder_subspaces(
 def main():
     #TODO: argparse move reduce_data.py CLI to here
     return 0
-    
+
 if __name__ == "__main__":
     sys.exit(main())

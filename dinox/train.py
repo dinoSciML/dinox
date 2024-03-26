@@ -57,6 +57,8 @@ def train_nn_approximator(
     training_results_dict,
 ):
     # DOCUMENT ME, remainder not allowed
+    # returns the trained equinox nn and results dictionary
+    # No Disk IO side effects, stdout (printing) side effects exist
     # start_time = time.time()
     ####################################################################################
     # Create variable aliases for readability
@@ -214,6 +216,9 @@ def train_nn_approximator(
 
 
 def train_dino_in_embedding_space(random_seed, embedded_training_config_dict):
+    # returns the trained equinox dino
+    # also has IO side effects (saving thigns to disk)
+
     #################################################################################
     # Create variable aliases for readability										#
     #################################################################################
@@ -294,3 +299,4 @@ def train_dino_in_embedding_space(random_seed, embedded_training_config_dict):
     cli_dir = "cli"
     # Involves Disk I/O
     save_to_pickle(Path(cli_dir, save_name), config_dict)
+    return trained_approximator

@@ -26,6 +26,7 @@ from jax.lax import dynamic_slice_in_dim as dslice
 
 
 def value_and_jacrev(f, xs):
+    # No side effects
     _, pullback = vjp(f, xs[0])
     basis = jnp.eye(_.size, dtype=_.dtype)
 
@@ -39,6 +40,8 @@ def value_and_jacrev(f, xs):
 
 
 def create_mean_h1_seminorm_l2_errors_and_norms(dM, batch_size):
+    # No side effects
+
     one_over_n_batches = 1.0 / batch_size
 
     @eqx.filter_jit
@@ -84,6 +87,8 @@ def create_mean_h1_seminorm_l2_errors_and_norms(dM, batch_size):
 
 @eqx.filter_jit
 def mean_l2_norm_errors_and_norms(nn, X, Y, dYdX):
+    # No side effects
+
     predicted_Y, predicted_dYdX = value_and_jacrev(
         nn, dslice(X, end_idx, batch_size)
     )
@@ -133,6 +138,8 @@ def create_mean_h1_seminorm_loss(dM: int) -> Callable:
 
 @eqx.filter_jit
 def mean_l2_norm_loss(nn: eqx.nn, input_X: jax.Array, actual_Y: jax.Array):
+    # No side effects
+
     predicted_Y = nn(input_X)
     return jnp.mean(optax.l2_loss(predicted_Y.squeeze(), actual_Y))
 
@@ -145,10 +152,14 @@ grad_mean_l2_norm_loss = eqx.filter_grad(mean_l2_norm_loss)
 
 @jax.jit
 def normalize_values(scores, normalizers):  # store L2NormY, L2NormdYdX
+    # No side effects
+
     return scores / normalizers
 
 
 def compute_l2_loss_metrics(nn, X, Y, dYdX, Y_L2_norms, dYdX_L2_norms, n_batches):
+    # No side effects
+
     # fill an array jax
     mse = 0.0
     msje = 0.0

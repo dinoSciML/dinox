@@ -61,8 +61,8 @@ def main() -> int:
         "-depth",
         dest="depth",
         required=False,
-        default=7,
-        help="NN # of layers (depth): e.g. 6",
+        default=8, #8 #6
+        help="NN # of layers (depth): e.g. 8",
         type=int,
     )
     # cli.add_argument("-decoder", dest='decoder',required=False, default = 'jjt',  help="output basis: pod or jjt",type=str)
