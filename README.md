@@ -18,7 +18,7 @@ pip install equinox
 - `cupy` - for rapid permuting of data on GPUs
 - `kvikio` - for interfacing with NVIDIA GPU Direct Storage (GDS) for loading data directly to GPU, skipping the CPU
 - `opt_einsum` - for order-optimized tensor contraction
-- `equinox` - Dinox is primarily build off of equinox and is therefore fully jax compatible. Most of dinox are simply lightweight utilities for dealing with mean H1 loss training of nerual networks with data that is enriched with Jacobians ($`X, Y, dYdX`$)
+- `equinox` - Dinox is primarily build off of equinox and is therefore fully jax compatible. Most of dinox are simply lightweight utilities for dealing with mean H1 loss training of nerual networks with data that is enriched with Jacobians ($`X, Y, dY/dX`$)
 - `optax` - we use optax for optimization, though any neural network optimization library can be used. We make choices primarily for speed.
 
 ## Need to generalize this to figure out the actual minimal requirements in terms of cuda, jax versions, and kvikio. The main tricky parts are which versions of jax/kvikio/cudatoolkit/cuda-nvcc/cudnn work together well. For now, only want to restrict to python>=3.10
