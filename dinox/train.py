@@ -1,12 +1,30 @@
-import pickle
-import time
-from os import makedirs
+# This file is part of the dinox package
+#
+# dinox is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Lesser General Public License as published by
+# the Free Software Foundation, either version 2 of the License, or any later version.
+#
+# dinox is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Lesser General Public License for more details.
+#
+# You should have received a copy of the GNU Lesser General Public License
+# If not, see <http://www.gnu.org/licenses/>.
+#
+# Authors: Joshua Chen and Tom O'Leary-Roseberry
+# Contact: joshuawchen@icloud.com | tom.olearyroseberry@utexas.edu
+
+import sys
+
+# import time
 from pathlib import Path
 
 import equinox as eqx
 import jax
 import jax.numpy as jnp
-import optax
+import jax.random as jr
+import optax  # optax, eqx are dependencies of dinox
 
 from .data_utilities import (
     create_array_permuter,
@@ -14,9 +32,9 @@ from .data_utilities import (
     save_to_pickle,
     slice_data,
     split_training_testing_data,
-	sub_dict,
+    sub_dict,
 )
-from .dino import instantiate_nn
+from .nn_factories import instantiate_nn
 from .embed_data import embed_data_in_encoder_decoder_subspaces
 from .metrics import (
     compute_l2_loss_metrics,
@@ -39,7 +57,7 @@ def train_nn_approximator(
     training_results_dict,
 ):
     # DOCUMENT ME, remainder not allowed
-    start_time = time.time()
+    # start_time = time.time()
     ####################################################################################
     # Create variable aliases for readability
     ####################################################################################
@@ -64,7 +82,7 @@ def train_nn_approximator(
         raise (
             f"Warning, the number of testing data ({n_test}) does not evenly devide into n_batches={n_test_batches}. Adjust `batch_size` to evenly divide {n_test}."
         )
-    permute_testing_training_arrays = create_array_permuter(n_train+n_test, 777)
+    permute_testing_training_arrays = create_array_permuter(n_train + n_test, 777)
     permute_training_arrays = create_array_permuter(n_train)
     permute_testing_arrays = create_array_permuter(n_test)
     ####################################################################################
@@ -79,12 +97,10 @@ def train_nn_approximator(
         compute_loss_metrics = create_compute_h1_loss_metrics(dM, batch_size)
 
     @eqx.filter_jit
-    def take_step(optimizer_state,
-                  nn: eqx.Module,
-                  X: jax.Array,
-                  Y: jax.Array,
-                  dYdX: jax.Array):
-        
+    def take_step(
+        optimizer_state, nn: eqx.Module, X: jax.Array, Y: jax.Array, dYdX: jax.Array
+    ):
+
         updates, optimizer_state = optimizer.update(
             grad_loss(nn, X, Y, dYdX), optimizer_state
         )
@@ -120,17 +136,20 @@ def train_nn_approximator(
     # Train the neural network
     ###################################################################################
     metrics_history_train = jnp.empty((n_epochs, 3), dtype=jnp.float32)
-    metrics_history_test  = jnp.empty((n_epochs, 3), dtype=jnp.float32)
+    metrics_history_test = jnp.empty((n_epochs, 3), dtype=jnp.float32)
 
     for epoch in jnp.arange(1, n_epochs + 1):
-        if (epoch % 20) == 0 :
+        if (epoch % 20) == 0:
             print("concatenating")
-            test_train_data = [jax.lax.concatenate((test,train),0) for test, train in zip(training_data, testing_data)] #only do this is we can't store double the data in memory (otherwise we will just pass in test_train in the beginning also)
+            test_train_data = [
+                jax.lax.concatenate((test, train), 0)
+                for test, train in zip(training_data, testing_data)
+            ]  # only do this is we can't store double the data in memory (otherwise we will just pass in test_train in the beginning also)
             print("permuting and splitting")
             training_data, testing_data = split_training_testing_data(
                 permute_testing_training_arrays(*test_train_data),
-                training_config_dict["data"]
-                )
+                training_config_dict["data"],
+            )
         # permute with cupy vs permute_key,
         permuted_training_data = permute_training_arrays(*training_data)
         X, Y, dYdX, _, _ = permuted_training_data
@@ -150,44 +169,51 @@ def train_nn_approximator(
 
         # start = time.time()
         # Post-process and compute metrics after each epoch
-        metrics_history_train = \
-            metrics_history_train.at[epoch-1].set(
-                compute_loss_metrics(nn, *permuted_training_data, n_train_batches) #N x 3
-            )
+        metrics_history_train = metrics_history_train.at[epoch - 1].set(
+            compute_loss_metrics(nn, *permuted_training_data, n_train_batches)  # N x 3
+        )
 
         permuted_test_data = permute_testing_arrays(*testing_data)
 
-        metrics_history_test = \
-            metrics_history_test.at[epoch-1].set(
-                compute_loss_metrics(nn, *permuted_test_data, n_test_batches) #N x 3
-            )
+        metrics_history_test = metrics_history_test.at[epoch - 1].set(
+            compute_loss_metrics(nn, *permuted_test_data, n_test_batches)  # N x 3
+        )
         # metric_time = time.time() - start
 
         # metrics_history['epoch_time'][epoch] = epoch_time
 
-        print(f"train epoch: {epoch}, "
-        			f"loss: {(metrics_history_train[epoch-1, 2]):.4f}, "
-        			f"accuracy l2 : {(metrics_history_train[epoch-1, 0] * 100):.4f}, "
-        			f"accuracy h1 : {(metrics_history_train[epoch-1, 1] * 100):.4f}")
-        print(f" test epoch: {epoch}, "
-        			f"loss: {(metrics_history_test[epoch-1, 2]):.4f}, "
-        			f"accuracy l2: {(metrics_history_test[epoch-1, 0] * 100):.4f}, "
-        			f"accuracy h1: {(metrics_history_test[epoch-1, 1] * 100):.4f}" )
+        print(
+            f"train epoch: {epoch}, "
+            f"loss: {(metrics_history_train[epoch-1, 2]):.4f}, "
+            f"accuracy l2 : {(metrics_history_train[epoch-1, 0] * 100):.4f}, "
+            f"accuracy h1 : {(metrics_history_train[epoch-1, 1] * 100):.4f}"
+        )
+        print(
+            f" test epoch: {epoch}, "
+            f"loss: {(metrics_history_test[epoch-1, 2]):.4f}, "
+            f"accuracy l2: {(metrics_history_test[epoch-1, 0] * 100):.4f}, "
+            f"accuracy h1: {(metrics_history_test[epoch-1, 1] * 100):.4f}"
+        )
         # print('Max test accuracy L2 = ', 100*np.max(np.array(metrics_history['test_accuracy_l2'])))
         # print('Max test accuracy H1 (semi-norm) = ', 100*np.max(np.array(metrics_history['test_accuracy_h1'])))
         # print('The metrics took', metric_time, 's')
 
     # metrics_history_train and metrics_history_test are stored as N_iters x 3
-    training_results_dict['train_accuracy_l2'], \
-    training_results_dict['train_accuracy_h1'], \
-     training_results_dict['train_loss'] = metrics_history_train.T
-    training_results_dict['test_accuracy_h1'], \
-    training_results_dict['test_accuracy_l2'], \
-    training_results_dict['test_loss'] = metrics_history_test.T
+    (
+        training_results_dict["train_accuracy_l2"],
+        training_results_dict["train_accuracy_h1"],
+        training_results_dict["train_loss"],
+    ) = metrics_history_train.T
+    (
+        training_results_dict["test_accuracy_h1"],
+        training_results_dict["test_accuracy_l2"],
+        training_results_dict["test_loss"],
+    ) = metrics_history_test.T
     # print("Total time", time.time() - start_time)
     return training_results_dict, nn
 
-def train_dino_in_embedding_space(model_key, embedded_training_config_dict):
+
+def train_dino_in_embedding_space(random_seed, embedded_training_config_dict):
     #################################################################################
     # Create variable aliases for readability										#
     #################################################################################
@@ -205,7 +231,8 @@ def train_dino_in_embedding_space(model_key, embedded_training_config_dict):
     #################################################################################
     encodec_dict = config_dict["encoder_decoder"]
 
-    # if the loaded data is not 'reduced' and we want to encode/decode (i.e. use the active subspace)
+    # If `data` is not already `reduced` and we want to encode/decode
+    # (i.e. use the active subspace)
     if (encodec_dict["encode"] or encodec_dict["decode"]) and data_config_dict.get(
         "reduced_data_filenames"
     ) is None:
@@ -216,10 +243,9 @@ def train_dino_in_embedding_space(model_key, embedded_training_config_dict):
     #################################################################################
     # Split the data into training/testing data 	                                #
     #################################################################################
-    training_data, testing_data = split_training_testing_data(data,
-                                                              config_dict["data"],
-                                                              calculate_norms = True
-                                                              )
+    training_data, testing_data = split_training_testing_data(
+        data, config_dict["data"], calculate_norms=True
+    )
 
     #################################################################################
     # Set up the neural network and train it										#
@@ -229,9 +255,11 @@ def train_dino_in_embedding_space(model_key, embedded_training_config_dict):
     nn_config_dict["input_size"] = training_data[0].shape[1]
     nn_config_dict["output_size"] = training_data[1].shape[1]
     untrained_approximator, permute_key = instantiate_nn(
-        key=model_key, nn_config_dict=nn_config_dict
+        key=jr.key(random_seed), nn_config_dict=nn_config_dict
     )
-    config_dict["training"]["data"] = config_dict["data"] #hack for test/train splitting
+    config_dict["training"]["data"] = config_dict[
+        "data"
+    ]  # hack for test/train splitting
     trained_approximator = train_nn_approximator(
         untrained_approximator=untrained_approximator,
         training_data=training_data,
