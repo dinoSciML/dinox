@@ -6,10 +6,12 @@ generalize the codebase to work broadly/revert to CPU when gpu isn't available. 
 
 # Installation
 Create a brand new environment. Use `mamba` in place of `conda` if you can. (i.e. run the first line below). The assumption is that conda is already installed on your machine.
+
+If one has access to an NVIDIA gpu, use gpu_environment.yml, otherwise use cpu_environment.yml, which will install the dependencies for the code, but the code will not be as performant, since the library is a GPU-forward library.
 ```
 conda install -c conda-forge mamba
 
-mamba env create -f environment.yml
+mamba env create -f <gpu, cpu>_environment.yml
 poetry install
 ```
 # Running dinox
