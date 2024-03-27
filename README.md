@@ -1,6 +1,9 @@
 # dinox
 Implementation of **Derivative Informed Neural Operators** in `jax`. Build for fast performance in single GPU environments-- and specifically where _all-data-can-fit-in-gpu-memory_. In the future, this code will be generalized for the setting in which one has multiple GPUs and would like to take advantage. It will also be generalized to account for big-data (where not all samples can fit in gpu or cpu memory) -- Probably via memmapping. 
 
+# Todo:
+generalize the codebase to work broadly/revert to CPU when gpu isn't available. Allow a non-gpu installation of DINO (which won't require cupy, kvikio, etc'. Do this via a non-gpu gpu_environment.yml cpu_environment.yml
+
 # Installation
 Create a brand new environment. Use `mamba` in place of `conda` if you can.
 ```
