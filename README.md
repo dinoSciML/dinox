@@ -18,7 +18,7 @@ Currently, one can run in each application folder
 python generate_data.py
 ```
 
-**if one has `HIPPYFLOW_PATH` and `HIPPYLIB_PATH` environmental variables set correctly and one has both of those libraries. TODO: DO away with this. For the paper, we ought to provide two options.
+**if one has `HIPPYFLOW_PATH` and `HIPPYLIB_PATH` environmental variables set correctly and one has both of those libraries.** TODO: DO away with this. For the paper, we ought to provide two options.
 1) Directly download our training data (as generated from hippylib/flow with directions on exactly how it was generated
 2) Install hippylib/flow and user our applications folders to generate them yourself (at your own risk)
 
