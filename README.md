@@ -5,9 +5,11 @@ Implementation of **Derivative Informed Neural Operators** in `jax`. Build for f
 generalize the codebase to work broadly/revert to CPU when gpu isn't available. Allow a non-gpu installation of DINO (which won't require cupy, kvikio, etc'. Do this via a non-gpu gpu_environment.yml cpu_environment.yml
 
 # Installation
-Create a brand new environment. Use `mamba` in place of `conda` if you can.
+Create a brand new environment. Use `mamba` in place of `conda` if you can. (i.e. run the first line below). The assumption is that conda is already installed on your machine.
 ```
-conda env create -f environment.yml
+conda install -c conda-forge mamba
+
+mamba env create -f environment.yml
 poetry install
 ```
 # Running dinox
