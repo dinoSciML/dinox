@@ -1,9 +1,7 @@
 # dinox
 Implementation of **Derivative Informed Neural Operators** in `jax`. Build for fast performance in single GPU environments-- and specifically where _all-data-can-fit-in-gpu-memory_. In the future, this code will be generalized for the setting in which one has multiple GPUs and would like to take advantage. It will also be generalized to account for big-data (where not all samples can fit in gpu or cpu memory). 
 
-# TODO: install directions...
-## currently tested on:
-
+# Installation
 Create a brand new environment. Use `mamba` in place of `conda` if you can.
 ```
 conda env create -f environment.yml
@@ -13,6 +11,16 @@ poetry install
 ```
 python -m dinox -network_name "<name_to_save_network_as>" -data_dir "<location_of_jacobian_enriched_training_data>"
 ```
+# Examples
+Currently, one can run in each application folder 
+
+```
+python generate_data.py
+```
+
+**if one has `HIPPYFLOW_PATH` and `HIPPYLIB_PATH` environmental variables set correctly and one has both of those libraries. TODO: DO away with this. For the paper, we ought to provide two options.
+1) Directly download our training data (as generated from hippylib/flow with directions on exactly how it was generated
+2) Install hippylib/flow and user our applications folders to generate them yourself (at your own risk)
 
 Currently, assumes data is stored in "m_data.npy", "q_data.npy", "J_data.npy". Will generalize soon for CLI passed in npy filenames, and for memmapped numpy arrays.. 
 
