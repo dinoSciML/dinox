@@ -18,7 +18,7 @@
 import sys
 # import time
 from pathlib import Path
-
+from os import makedirs
 import equinox as eqx
 import jax
 import jax.numpy as jnp
@@ -270,7 +270,7 @@ def train_dino_in_embedding_space(random_seed, embedded_training_config_dict):
     network_serialization_config_dict = config_dict["network_serialization"]
     save_name = network_serialization_config_dict["network_name"]
     # logger = {'reduced':training_logger} #,'full': final_logger}
-    logging_dir = "logging"
+    logging_dir = "training_results"
     save_to_pickle(Path(logging_dir, save_name), training_results_dict)
 
     #################################################################################
@@ -278,11 +278,14 @@ def train_dino_in_embedding_space(random_seed, embedded_training_config_dict):
     #################################################################################
     # Involves Disk I/O
     if network_serialization_config_dict["save_weights"]:
+        # eqx nn weights serialization
+        makedirs(network_serialization_config_dict['trained_nn'], exist_ok=True)
         eqx.tree_serialise_leaves(
-            f"{network_serialization_config_dict['weights_dir']}{save_name}.eqx",
+            f"{network_serialization_config_dict['trained_nn']}{save_name}.eqx",
             trained_approximator,
         )
-        save_to_pickle(Path(network_serialization_config_dict['weights_dir'], save_name), training_results_dict)
+        #eqx nn class serialization
+        save_to_pickle(Path(network_serialization_config_dict['trained_nn'], save_name), network_serialization_config_dict["nn"]) 
     #################################################################################
     # Save config file for reproducibility                                          #
     #################################################################################

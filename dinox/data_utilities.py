@@ -33,6 +33,7 @@ import equinox as eqx
 import jax
 import jax.numpy as jnp
 import jax.random as jr
+import pickle
 import numpy as np
 from jax import vmap
 from jax.lax import dynamic_slice_in_dim as dslice
@@ -114,23 +115,23 @@ def save_to_pickle(file_path: Path, data: Any) -> None:
     if not ext:
         ext = ".pkl"
     makedirs(file_path.parents[0], exist_ok=True)
-    with open(Path.joinpath(file_path, ext), "wb+") as file:
+    with open(file_path.with_suffix(ext), "wb+") as file:
         pickle.dump(data, file, pickle.HIGHEST_PROTOCOL)
 
-def load_pickle(file_path: Path, data: Any) -> None:
+def load_pickle(file_path: Path) -> None:
     # Involves Disk I/O
     ext = file_path.suffix
     if not ext:
         ext = ".pkl"
-    with open(Path.joinpath(file_path, ext), "rb") as file:
-        deserialized =  pickle.load(data, file, pickle.HIGHEST_PROTOCOL)
+    with open(file_path.with_suffix(ext), "rb") as file:
+        deserialized =  pickle.load(file)
     return deserialized
 
 def __load_jax_array_with_shape_direct_to_gpu(file_path, shape):
-    # assumes float64
+    # casts to float32 since that is the standard for jax
     return jnp.asarray(
         np.fromfile(file_path, like=LikeWrapper(np.empty(())), offset=128),
-        dtype=np.float64,
+        dtype=np.float32,
     ).reshape(shape)
 
 
@@ -140,11 +141,8 @@ def load_data_disk_direct_to_gpu(
     data_dir = data_config_dict["data_dir"]
     N = data_config_dict["N"]
     X_filename, Y_filename, dYdX_filename = data_config_dict["data_filenames"]
-    # print(data_dir, X_filename, Y_filename, dYdX_filename)
-    # print(N,mq_data['m_data'].shape,  mq_data['q_data'].shape,  np.load(cli_args['data_dir']+'JstarPhi_data.npz')['JstarPhi_data'].shape)	5000 (5000, 1681) (5000, 25) (5000, 1681, 25)
     X = __load_jax_array_with_shape_direct_to_gpu(data_dir + X_filename, (N, -1))
     Y = __load_jax_array_with_shape_direct_to_gpu(data_dir + Y_filename, (N, -1))
-    # print(X.shape, Y.shape)
     dYdX = __load_jax_array_with_shape_direct_to_gpu(
         data_dir + dYdX_filename, (N, X.shape[1], -1)
     )
