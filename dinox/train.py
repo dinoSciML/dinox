@@ -29,8 +29,8 @@ from .data_utilities import (create_array_permuter,
                              load_data_disk_direct_to_gpu, save_to_pickle,
                              slice_data, split_training_testing_data, sub_dict)
 from .embed_data import embed_data_in_encoder_decoder_subspaces
-from .metrics import (compute_l2_loss_metrics, create_compute_h1_loss_metrics,
-                      create_grad_mean_h1_seminorm_loss,
+from .metrics import (batched_compute_h1_loss_metrics, #compute_l2_loss_metrics, 
+                      grad_mean_h1_seminorm_loss,
                       grad_mean_l2_norm_loss)
 from .nn_factories import instantiate_nn
 
@@ -82,11 +82,11 @@ def train_nn_approximator(
     ####################################################################################
     if loss_norm_weights[1] == 0.0:
         grad_loss = grad_mean_l2_norm_loss
-        compute_loss_metrics = compute_l2_loss_metrics
+        # compute_loss_metrics = compute_l2_loss_metrics
     else:
         # FUTURE TODO: #do this outside of here so that it doesnt rejit for each problem with the same dM and batchsize? if we have this in an outside loop
-        grad_loss = create_grad_mean_h1_seminorm_loss(dM)
-        compute_loss_metrics = create_compute_h1_loss_metrics(dM, batch_size)
+        grad_loss = grad_mean_h1_seminorm_loss
+        compute_loss_metrics = batched_compute_h1_loss_metrics
 
     @eqx.filter_jit
     def take_step(
