@@ -47,10 +47,9 @@ def __value_and_jacrev(f, xs):
 
     return vmap(value_and_jacrev_x)(xs)
 
-@partial(eqx.filter_jit, static_argnames=['dM', 'batch_size', 'n_batches'])
-def __batched_mean_h1_seminorm_l2_errors_and_norms(carry, i, 
-    dM, batch_size, n_batches):
-    nn, X, Y, dYdX, Y_L2_norms, dYdX_L2_norms, end_idx, partial_mse, partial_msje, partial_rel_mse, partial_rel_msje = carry
+@eqx.filter_jit
+def __batched_mean_h1_seminorm_l2_errors_and_norms(carry, end_idx):
+    dM, batch_size, n_batches, nn, X, Y, dYdX, Y_L2_norms, dYdX_L2_norms, partial_mse, partial_msje, partial_rel_mse, partial_rel_msje = carry
     one_over_n_batches = 1.0 / n_batches
     predicted_Y, predicted_dYdX = __value_and_jacrev(
         nn, dslice(X, end_idx, batch_size)
@@ -67,7 +66,6 @@ def __batched_mean_h1_seminorm_l2_errors_and_norms(carry, i,
         axis=(1, 2),
     )
     return ( nn, X, Y, dYdX, Y_L2_norms, dYdX_L2_norms,
-        end_idx + batch_size,
         partial_mse + one_over_n_batches * jnp.mean(mse_i),
         partial_msje + one_over_n_batches * jnp.mean(msje_i),
         partial_rel_mse + one_over_n_batches
@@ -234,13 +232,13 @@ def create_compute_h1_loss_metrics(dM: int, batch_size) -> Callable:
     return compute_loss_metrics
 
 
-@partial(eqx.filter_jit, static_argnames=['dM', 'batch_size', 'n_batches'])
+@eqx.filter_jit(donate=['X', 'Y', 'dYdX', 'Y_L2_norms', 'dYdX_L2_norms'])
 def batched_compute_h1_loss_metrics(
         dM: int,
         batch_size: int,
-        nn, X, Y, dYdX, Y_L2_norms, dYdX_L2_norms, n_batches) -> Callable:
-    batched_mean_h1_seminorm_l2_errors_and_norms = jax.tree_util.Partial(__batched_mean_h1_seminorm_l2_errors_and_norms, dM=dM, batch_size=batch_size, n_batches = n_batches)
-    results = jax.lax.scan(batched_mean_h1_seminorm_l2_errors_and_norms, ((nn, X, Y, dYdX, Y_L2_norms, dYdX_L2_norms, 0, 0.0,0.0,0.0,0.0), 0), length=n_batches)[0]
+        n_batches,
+        nn, X, Y, dYdX, Y_L2_norms, dYdX_L2_norms ) -> Callable:
+    results = jax.lax.scan(__batched_mean_h1_seminorm_l2_errors_and_norms, ((dM, batch_size, n_batches, nn, X, Y, dYdX, Y_L2_norms, dYdX_L2_norms, 0.0,0.0,0.0,0.0), 0), jnp.arange(0, n_batches, batch_size))[0]
     mse, msje, rel_mse, rel_msje = results[7:11]
 
     #finally:
