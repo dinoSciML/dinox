@@ -306,8 +306,8 @@ def main() -> int:
 
     # Deserializing / Serializing Neural Network settings
     config_dict["network_serialization"]["save_weights"] = True  # make a CLI
-    config_dict["network_serialization"]["weights_dir"] = "trained_weights/"# make a CLI  
-    config_dict['network_serialization']['nn_checkpoint_path'] = "trained_weights/"
+    config_dict["network_serialization"]["trained_nn"] = "trained_nn/"# make a CLI  
+    config_dict['network_serialization']['nn_checkpoint_path'] = "trained_nn/"
     config_dict['network_serialization']["nn"] = config_dict["nn"]
     random_seed = cli_args["run_seed"]
     if cli_args["l2_weight"] != 1.0:
