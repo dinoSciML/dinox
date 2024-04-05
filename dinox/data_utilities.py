@@ -95,6 +95,43 @@ def create_array_permuter(N, cp_random_seed=None) -> Callable:
 
     return permute_arrays
 
+def create_array_permuter_flat(N, cp_random_seed=None) -> Callable:
+    # Has side effects! Stateful cp_random_seed
+
+    indices = cp.arange(N)
+    if cp_random_seed is not None:
+        cp.random.seed(cp_random_seed)
+
+    def permute_arrays(
+        X: jax.Array,
+        Y_dYdX: jax.Array,
+        Y_norms: jax.Array,
+        dYdX_norms: jax.Array,
+    ) -> Tuple[jax.Array]:
+        perm = cp.random.permutation(indices)
+
+        return (
+            jax.dlpack.from_dlpack(cp.from_dlpack(jax.dlpack.to_dlpack(X))[perm]),
+            jax.dlpack.from_dlpack(cp.from_dlpack(jax.dlpack.to_dlpack(Y_dYdX))[perm]),
+            jax.dlpack.from_dlpack(cp.from_dlpack(jax.dlpack.to_dlpack(Y_norms))[perm]),
+            jax.dlpack.from_dlpack(
+                cp.from_dlpack(jax.dlpack.to_dlpack(dYdX_norms))[perm]
+            ),
+        )
+
+    return permute_arrays
+
+@eqx.filter_jit
+def slice_data_flat(
+    X: jax.Array, Y_dYdX: jax.Array, batch_size: int, end_idx: int
+) -> Tuple[jax.Array, jax.Array, jax.Array]:
+    # No side effects
+    return (
+        end_idx + batch_size,
+        dslice(X, end_idx, batch_size),
+        dslice(Y_dYdX, end_idx, batch_size),
+    )
+
 
 @eqx.filter_jit
 def slice_data(
@@ -127,11 +164,11 @@ def load_pickle(file_path: Path) -> None:
         deserialized =  pickle.load(file)
     return deserialized
 
-def __load_jax_array_with_shape_direct_to_gpu(file_path, shape):
+def __load_shaped_jax_array_direct_to_gpu(file_path, shape):
     # casts to float32 since that is the standard for jax
     return jnp.asarray(
         np.fromfile(file_path, like=LikeWrapper(np.empty(())), offset=128),
-        dtype=np.float32,
+        dtype=np.float64,
     ).reshape(shape)
 
 
@@ -141,11 +178,11 @@ def load_data_disk_direct_to_gpu(
     data_dir = data_config_dict["data_dir"]
     N = data_config_dict["N"]
     X_filename, Y_filename, dYdX_filename = data_config_dict["data_filenames"]
-    X = __load_jax_array_with_shape_direct_to_gpu(data_dir + X_filename, (N, -1))
-    Y = __load_jax_array_with_shape_direct_to_gpu(data_dir + Y_filename, (N, -1))
-    dYdX = __load_jax_array_with_shape_direct_to_gpu(
+    X = __load_shaped_jax_array_direct_to_gpu(data_dir + X_filename, (N, -1))
+    Y = __load_shaped_jax_array_direct_to_gpu(data_dir + Y_filename, (N, -1))
+    dYdX = __load_shaped_jax_array_direct_to_gpu(
         data_dir + dYdX_filename, (N, X.shape[1], -1)
-    )
+    ) #N x X x Y, N x Y
     return X, Y, dYdX
 
 
@@ -159,7 +196,9 @@ def split_training_testing_data(
     if calculate_norms:
         # data = X,Y,dYdX
         # Y_norms, dYdX_norms = [vmap(jnp.linalg.norm)(array) for array in data[1:]]
-        data = list(data) + [vmap(jnp.linalg.norm)(array) for array in data[1:]]
+        print("Computing data norms for relative error calculations")
+        data = list(data) + [vmap(jax.jit(lambda x: jnp.linalg.norm(x)**2))(array) for array in data[1:]]
+
     n_data, dM = data[0].shape
     assert all((array.shape[0] == n_data for array in data))
     assert n_data >= n_train_test
@@ -167,3 +206,28 @@ def split_training_testing_data(
         [array[:n_train] for array in data],
         [array[n_train:n_train_test] for array in data],
     )
+
+
+
+def split_training_testing_data_flat(
+    data: Tuple[jax.Array], data_config_dict: Dict, calculate_norms: bool = False
+) -> Tuple[Tuple[jax.Array], Tuple[jax.Array]]:
+    # No side effects
+    n_test = data_config_dict["test_data_size"]
+    n_train = data_config_dict["train_data_size"]
+    n_train_test = n_train + n_test
+    if calculate_norms:
+        # data = X,Y,dYdX -> X, Y_dYdX # Y_dYdX = [Y, flatten(dYdX)] where flatten 
+        #takes dY x dX -> [dX dX dX...dY times]
+        print("Computing data norms for relative error calculations")
+        Y_dYdX = jnp.concatenate([data[1], vmap(lambda x: x.ravel())(data[2])], axis=1)
+        data = [data[0],Y_dYdX]+ [vmap(jax.jit(lambda x: jnp.linalg.norm(x)**2))(array) for array in data[1:]]
+
+    n_data, dM = data[0].shape
+    assert all((array.shape[0] == n_data for array in data))
+    assert n_data >= n_train_test
+    return (
+        [array[:n_train] for array in data],
+        [array[n_train:n_train_test] for array in data],
+    )
+

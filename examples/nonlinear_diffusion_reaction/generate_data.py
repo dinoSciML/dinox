@@ -21,6 +21,9 @@ from ndr_model import (nonlinear_diffusion_reaction_model,
 
 ################################################################################
 # Set up the model
+import time
+
+start = time.time()
 
 settings = nonlinear_diffusion_reaction_settings()
 pde, prior, misfit, _ = nonlinear_diffusion_reaction_model(settings)
@@ -47,9 +50,18 @@ output_basis = np.eye(dQ)
 
 dataGenerator = hf.DataGenerator(observable, prior)
 
-nsamples = 5000
+nsamples = 25_000
 data_dir = "data/"
+
 
 dataGenerator.generate(
     nsamples, derivatives=(1, 0), output_basis=output_basis, data_dir=data_dir
 )
+
+
+print("total_time: ", time.time() - start)
+
+
+# wrap around this saving the prior information to numpy
+# warp around this saving the data generating distribution information (sigma^2)
+
