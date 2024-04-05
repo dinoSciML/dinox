@@ -14,17 +14,10 @@ class GenericDense(nn.Module):
         self.hidden_layers = [nn.Dense(width) for width in self.layer_widths]
         self.final_layer = nn.Dense(self.output_size, use_bias=self.output_bias)
 
+    @jax.jit
     def __call__(self, x):
         for i, layer in enumerate(self.hidden_layers):
-            x = layer(x)
-            if self.activation == "softplus":
-                x = nn.softplus(x)
-            elif self.activation == "tanh":
-                x = nn.tanh(x)
-            elif self.activation == "relu":
-                x = nn.relu(x)
-            elif self.activation == "gelu":
-                x = nn.gelu(x)
+            x = nn.__getattr__(self.activation)(layer(x))
         x = self.final_layer(x)
 
         return x

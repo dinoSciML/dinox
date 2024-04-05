@@ -1,9 +1,11 @@
 import jax
 import jax.numpy as jnp
 
+@jax.jit
 def squared_l2_error(y_true, y_pred):
     return squared_l2_norm(y_true - y_pred)
 
+@jax.jit
 def squared_l2_norm(y):
     return jnp.inner(y, y)
 
@@ -17,10 +19,11 @@ def l2_loss(y_true,y_pred):
 def mse(y_true_batched, y_pred_batched):
     return jnp.mean(jax.vmap(squared_l2_error)(y_true_batched, y_pred_batched), axis=0)
 
-
+@jax.jit
 def squared_f_error(y_true, y_pred):
     return squared_f_norm(y_true - y_pred)
 
+@jax.jit
 def squared_f_norm(y):
     return jnp.sum(jnp.square(y))
 
