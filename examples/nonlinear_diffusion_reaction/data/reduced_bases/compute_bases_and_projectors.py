@@ -14,7 +14,7 @@ import hippylib as hp
 sys.path.append(os.environ.get("HIPPYFLOW_PATH"))
 import hippyflow as hf
 
-sys.path.append("../")
+sys.path.append("../../")
 
 
 ################################################################################
@@ -25,7 +25,7 @@ from ndr_model import (nonlinear_diffusion_reaction_model,
 
 parser = argparse.ArgumentParser()
 parser.add_argument(
-    "-data_dir", "--data_dir", type=str, default="../data/", help="Where to save"
+    "-data_dir", "--data_dir", type=str, default="../../data/", help="Where to save"
 )
 parser.add_argument(
     "-basis_type", "--basis_type", type=str, default="as", help="as or kle"
@@ -41,7 +41,7 @@ parser.add_argument(
     help="Active subspace oversample",
 )
 parser.add_argument(
-    "-ndata", "--ndata", type=int, default=200, help="Number of samples"
+    "-ndata", "--ndata", type=int, default=1000, help="Number of samples"
 )
 
 args = parser.parse_args()

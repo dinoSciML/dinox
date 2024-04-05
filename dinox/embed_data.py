@@ -22,7 +22,7 @@ import jax.numpy as jnp
 from kvikio.numpy import LikeWrapper  # kvikio is optional dependency?
 from opt_einsum import contract  # opt_einsum is a dependency
 
-from .data_utilities import __load_jax_array_with_shape_direct_to_gpu
+from .data_utilities import __load_shaped_jax_array_direct_to_gpu
 
 
 # TODO: python dinox.embed_data --cli_args which uses the CLI arguments from reduce_data.py (deprecated -- to be removed)
@@ -52,9 +52,9 @@ def embed_data_in_encoder_decoder_subspaces(
         X, Y = input_output_data
         dYdX = None
     reduced_X = contract(
-        "dm,mr->dr",
+        "nx,xr->nr",
         X,
-        __load_jax_array_with_shape_direct_to_gpu(
+        __load_shaped_jax_array_direct_to_gpu(
             encoder_decoder_dir + encoder_basis_filename, (X.shape[1], -1)
         ),
         backend="jax",
@@ -62,9 +62,9 @@ def embed_data_in_encoder_decoder_subspaces(
 
     reduced_Y = (
         contract(
-            "du,ur->dr",
+            "nu,ur->nr",
             Y,
-            __load_jax_array_with_shape_direct_to_gpu(
+            __load_shaped_jax_array_direct_to_gpu(
                 encoder_decoder_dir + decoder_filename, (Y.shape[1], -1)
             ),
             backend="jax",
@@ -79,9 +79,9 @@ def embed_data_in_encoder_decoder_subspaces(
     if dYdX is not None:
         #  Load the and project the Jacobian data with the encoder cobasis
         reduced_dYdX = contract(
-            "dmu,mr->dur",
+            "nxu,xr->nur",
             dYdX,
-            __load_jax_array_with_shape_direct_to_gpu(
+            __load_shaped_jax_array_direct_to_gpu(
                 encoder_decoder_dir + encoder_cobasis_filename, (X.shape[1], -1)
             ),
             backend="jax",

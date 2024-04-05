@@ -57,7 +57,7 @@ prior = model.prior
 
 dataGenerator = hf.DataGenerator(observable, prior)
 
-nsamples = 5000
+nsamples = 25_000
 data_dir = "data/" + formulation + "/"
 
 dataGenerator.generate(

@@ -47,7 +47,7 @@ def GenericDenseFactory(
         out_size=output_size,
         width_size=layer_width,
         depth=depth,
-        activation=jax.nn.__dict__[activation],
+        activation=jax.jit(jax.nn.__dict__[activation]),
         key=key,
     )
 

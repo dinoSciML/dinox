@@ -62,7 +62,7 @@ def main() -> int:
         "-depth",
         dest="depth",
         required=False,
-        default=8,  # 8 #6
+        default=6,  # 8 #6
         help="NN # of layers (depth): e.g. 8",
         type=int,
     )
@@ -83,12 +83,20 @@ def main() -> int:
         help="rank for output of AS network",
         type=int,
     )
+    # cli.add_argument(
+    #     "-truncation_dimension",
+    #     dest="truncation_dimension",
+    #     required=False,
+    #     default=200,
+    #     help="truncation dimension for low rank networks",
+    #     type=int,
+    # )
     cli.add_argument(
-        "-truncation_dimension",
-        dest="truncation_dimension",
+        "-layer_width",
+        dest="layer_width",
         required=False,
-        default=200,
-        help="truncation dimension for low rank networks",
+        default=400,
+        help="Hidden Neurons/Layer Widths",
         type=int,
     )
 
@@ -113,7 +121,7 @@ def main() -> int:
         "-train_data_size",
         dest="train_data_size",
         required=False,
-        default=2000,
+        default=4000,
         help="training data size",
         type=int,
     )
@@ -121,7 +129,7 @@ def main() -> int:
         "-test_data_size",
         dest="test_data_size",
         required=False,
-        default=3000,
+        default=5000,
         help="testing data size",
         type=int,
     )
@@ -139,7 +147,7 @@ def main() -> int:
         "-n_epochs",
         dest="n_epochs",
         required=False,
-        default=10000,
+        default=100_000,
         help="number of epochs for training",
         type=int,
     )
@@ -150,7 +158,7 @@ def main() -> int:
         "-step_size",
         "--step_size",
         type=float,
-        default=1e-4,
+        default=2e-5,
         help="What step size or 'learning rate'?",
     )
 
@@ -202,7 +210,6 @@ def main() -> int:
         default=False,
         action=BooleanOptionalAction,
     )
-    # cli.add_argument('-J_data', '--J_data', type=int, default=1, help="Is there J data??? ")
     ################################################################################
     # Parse arguments and place them in a heirarchical config dictionary 	       #
     ################################################################################
@@ -212,8 +219,8 @@ def main() -> int:
     # Define the keys for each configuration dict (*_keys is a required naming
     # convention here, since we define the configuration dict names by *
     ##################################################################################
-    # right now this is only for dense.
-    nn_keys = ("architecture", "depth", "activation")  #'layer_width',
+    # right now this is only for dense, TODO: generalize
+    nn_keys = ("architecture", "depth", "activation","layer_width")
     data_keys = (
         "data_dir",
         "train_data_size",
@@ -221,11 +228,14 @@ def main() -> int:
     )  #'data_filenames'
     training_keys = ("step_size", "batch_size", "optax_optimizer", "n_epochs")
     network_serialization_keys = ("network_name",)
-    config_dict = {
-        k.removesuffix("_keys"): sub_dict(super_dict=cli_args, keys=v)
-        for k, v in locals().items()
-        if k.endswith("_keys")
-    }
+
+    #This line has to be called in the same scope as the keys defined above
+    config_dict = \
+        {
+            k.removesuffix("_keys"): sub_dict(super_dict=cli_args, keys=v)
+            for k, v in locals().items()
+            if k.endswith("_keys")
+        }
     print(config_dict)
     # ESS, max weight, 3rd order moment, k-fold cross validation
 
@@ -238,7 +248,7 @@ def main() -> int:
 
     # Neural Network Architecture parameters
     # TODO: CHECK ON THIS, as a functio nof DIMENSION REDUCTION PARMETERS!
-    config_dict["nn"]["layer_width"] = 2 * 50  # args.rb_rank
+    # config_dict["nn"]["layer_width"] = 400 #2 * 50  # args.rb_rank
     # config_dict['nn']['layer_rank'] = 50 #nn_width = 2*args.rb_rank?
     # config_dict['hidden_layer_dimensions'] = (config_dict['depth']-1)*[config_dict['truncation_dimension']]+[config_dict['fixed_output_rank']]
 
