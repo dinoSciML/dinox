@@ -121,7 +121,7 @@ def main() -> int:
         "-train_data_size",
         dest="train_data_size",
         required=False,
-        default=4000,
+        default=8000,
         help="training data size",
         type=int,
     )
@@ -158,7 +158,7 @@ def main() -> int:
         "-step_size",
         "--step_size",
         type=float,
-        default=2e-5,
+        default=1e-3,
         help="What step size or 'learning rate'?",
     )
 

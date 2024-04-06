@@ -222,8 +222,9 @@ def split_training_testing_data_flat(
         print("Computing data norms for relative error calculations")
         Y_dYdX = jnp.concatenate([data[1], vmap(lambda x: x.ravel())(data[2])], axis=1)
         data = [data[0],Y_dYdX]+ [vmap(jax.jit(lambda x: jnp.linalg.norm(x)**2))(array) for array in data[1:]]
-
     n_data, dM = data[0].shape
+    print(n_data, n_train, n_test)
+
     assert all((array.shape[0] == n_data for array in data))
     assert n_data >= n_train_test
     return (

@@ -57,7 +57,7 @@ def train_nn_approximator(
     # DOCUMENT ME, remainder not allowed
     # returns the trained equinox nn and results dictionary
     # No Disk IO side effects, stdout (printing) side effects exist
-    # start_time = time.time()
+    start_time = time.time()
     ####################################################################################
     # Create variable aliases for readability
     ####################################################################################
@@ -288,7 +288,7 @@ def train_dino_in_embedding_space(random_seed, embedded_training_config_dict):
     #################################################################################
     # Load training/testing data from disk, directly onto GPU as jax arrays  		#
     #################################################################################
-    config_dict["data"]["N"] = 5000  # TEMPORARY HACK until i know what to do here
+    config_dict["data"]["N"] = 25_000  # TEMPORARY HACK until i know what to do here
     data_config_dict = config_dict["data"]
     print("Loading data directly to GPU, takes a few seconds.")
     data = load_data_disk_direct_to_gpu(data_config_dict)  # Involves Disk I/O

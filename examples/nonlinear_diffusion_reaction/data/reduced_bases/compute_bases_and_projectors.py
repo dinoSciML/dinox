@@ -41,7 +41,7 @@ parser.add_argument(
     help="Active subspace oversample",
 )
 parser.add_argument(
-    "-ndata", "--ndata", type=int, default=1000, help="Number of samples"
+    "-ndata", "--ndata", type=int, default=15000, help="Number of samples"
 )
 
 args = parser.parse_args()
