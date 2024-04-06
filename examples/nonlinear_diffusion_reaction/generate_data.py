@@ -54,10 +54,15 @@ nsamples = 25_000
 data_dir = "data/"
 
 
-dataGenerator.generate(
-    nsamples, derivatives=(1, 0), output_basis=output_basis, data_dir=data_dir
+# dataGenerator.generate(
+#     nsamples, derivatives=(1, 0), output_basis=output_basis, data_dir=data_dir
+# )
+mq_data = np.load(data_dir + "mq_data.npz")
+np.save(data_dir + "m_data.npy", mq_data["m_data"])
+np.save(data_dir + "q_data.npy", mq_data["q_data"])
+np.save(
+    data_dir + "J_data.npy", np.load(data_dir + "JstarPhi_data.npz")["JstarPhi_data"]
 )
-
 
 print("total_time: ", time.time() - start)
 

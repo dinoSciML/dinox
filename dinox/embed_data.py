@@ -55,7 +55,7 @@ def embed_data_in_encoder_decoder_subspaces(
         "nx,xr->nr",
         X,
         __load_shaped_jax_array_direct_to_gpu(
-            encoder_decoder_dir + encoder_basis_filename, (X.shape[1], -1)
+            encoder_decoder_dir + encoder_cobasis_filename, (X.shape[1], -1)
         ),
         backend="jax",
     )
@@ -82,7 +82,7 @@ def embed_data_in_encoder_decoder_subspaces(
             "nxu,xr->nur",
             dYdX,
             __load_shaped_jax_array_direct_to_gpu(
-                encoder_decoder_dir + encoder_cobasis_filename, (X.shape[1], -1)
+                encoder_decoder_dir + encoder_basis_filename, (X.shape[1], -1)
             ),
             backend="jax",
         )
