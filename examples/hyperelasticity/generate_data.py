@@ -1,19 +1,16 @@
 import math
-import os
-import sys
-
-import dolfin as dl
-import matplotlib.pyplot as plt
 import numpy as np
 import scipy.sparse as ss
-
-sys.path.append(os.environ.get("HIPPYLIB_PATH"))
+import matplotlib.pyplot as plt
+import dolfin as dl
+import sys, os
+sys.path.append(os.environ.get('HIPPYLIB_PATH'))
 import hippylib as hp
-
-sys.path.append(os.environ.get("HIPPYFLOW_PATH"))
+sys.path.append(os.environ.get('HIPPYFLOW_PATH'))
 import hippyflow as hf
 # from dinox.data_utilities import load_1D_jax_array_direct_to_gpu
 import jax.experimental.sparse as jsparse
+
 def save_scipy_csr(filename, csr_matrix): #place this where?
     filename+="_csr"
     np.save(filename+"_data", csr_matrix.data)
@@ -26,75 +23,62 @@ def save_scipy_csr(filename, csr_matrix): #place this where?
 #     indices = load_1D_jax_array_direct_to_gpu(filename+"_indices.npy")
 #     ind_ptr = load_1D_jax_array_direct_to_gpu(filename+"_ind_ptr.npy")
 #     shape = load_1D_jax_array_direct_to_gpu(filename+"_shape.npy")
-#     return jsparse.CSR(data, indices, ind_ptr, shape=tuple(shape))
+    # return jsparse.CSR(data, indices, ind_ptr, shape=tuple(shape))
 
-
-# pass in the model_file_name.py
-from ndr_model import (nonlinear_diffusion_reaction_model,
-                       nonlinear_diffusion_reaction_settings)
-
-# import importlib
-# module = importlib.import_module(model_file_name)
-
+from hyperelasticity_model import hyperelasticity_model, hyperelasticity_settings
 
 ################################################################################
 # Set up the model
 
-import time
-
-start = time.time()
-
-settings = nonlinear_diffusion_reaction_settings()
-
+settings = hyperelasticity_settings()
 n_iid_data_per_sample = 10
 #I need an outer loop here on several noise stdevs:
-for rel_noise_percent in [0.002, 0.005, 0.02, 0.1]:  #between 0.2 % and 10% $(high variance may revert to the prior low variance may revert too easily to near-gaussian around MAP ppoint)
-    #usually we use 0.01 = 1% of max = stdev, which correpsonds to very roughly 1% "SNR", to make the inference problem harder
+for i, rel_noise_percent in enumerate([0.002,0.005, 0.01, 0.03, 0.1]):  #between 0.2 % and 10% $(high variance may revert to the prior, low variance may revert too easily to near-gaussian around MAP ppoint)
+     #usually we use 0.01 = 1% of max = stdev, which correpsonds to very roughly 1% "SNR", to make the inference problem harder
     # can try varying amounts
-    #new scheme is to take max stdev of all N random problem's, i.e.
-    #m_i \sim N(m, C), max(L_inf{F(m_i}), N = 20
     settings["rel_noise"] = rel_noise_percent
-    print(f"Sampling for a noise model based on a relative max Linf noise of {100*rel_noise_percent}%")
-    pde, prior, misfit, _, noise_stdev = nonlinear_diffusion_reaction_model(settings)
+    settings["seed"] = i #different seed for each set of problems
+    pde, prior, misfit, mtrue, noise_stdev = hyperelasticity_model(settings)
 
-    # pde, prior, misfit, _ = module.model(module.settings())
     model = hp.Model(pde, prior, misfit)
 
+    Vh = pde.Vh
 
     ################################################################################
-    # Generate training data
+    # Generate training data + synthetic data observations from likelihood
 
     Vh = model.problem.Vh
 
     mesh = Vh[hp.STATE].mesh()
 
     B = model.misfit.B
-    observable = hf.LinearStateObservable(model.problem, B)
+    observable = hf.LinearStateObservable(model.problem,B)
     prior = model.prior
 
-    dQ = settings["ntargets"]
+    dQ = 2*settings['ntargets']
     # Since the problems are
     output_basis = np.eye(dQ)
 
-    dataGenerator = hf.DataGenerator(observable, prior, misfit)
+    dataGenerator = hf.DataGenerator(observable,prior, misfit) #just adding in misfit for access to the problems noise
 
-    nsamples = 5
-    problem_dir = f"problem/rel_noise_{rel_noise_percent}_noise_stdev_{noise_stdev}/"
-    data_dir = f"{problem_dir}samples/"
+    nsamples = 500
+    data_dir = f"data/rel_noise_{rel_noise_percent}_noise_stdev_{noise_stdev}/"
 
     #saves m, f(m), y = f(m) + eta for several eta (n_independent_data_per_sample #)
     dataGenerator.generate(nsamples, derivatives = (1,0),output_basis = output_basis, n_data_per_sample = n_iid_data_per_sample, data_dir = data_dir)
 
     #resave as individual uncompressed arrays, for use with dinox
+
+    #This is the data used by DINOX to train the dino
     mqy_data = np.load(data_dir + "mqy_data.npz")
     np.save(data_dir + "X_data.npy", mqy_data["m_data"])
     np.save(data_dir + "fX_data.npy", mqy_data["q_data"])
     np.save(
         data_dir + "dfXdX_data.npy", np.load(data_dir + "JstarPhi_data.npz")["JstarPhi_data"]
     )
+
+    #This will be used if we need bayesian inference problems (pick an X and Y, for hte true M and true noisy data)
     np.save(data_dir + "Y_data.npy", mqy_data["y_data"])
-    #save stdev for each data? so 
-    print("total_time: ", time.time() - start)
 
     #Save prior parameters
 

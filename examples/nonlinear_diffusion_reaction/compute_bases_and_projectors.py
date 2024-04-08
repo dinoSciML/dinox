@@ -8,14 +8,11 @@ import matplotlib.pyplot as plt
 import numpy as np
 import ufl
 
-sys.path.append(os.environ.get("HIPPYLIB_PATH", "..."))
+sys.path.append(os.environ.get("HIPPYLIB_PATH"))
 import hippylib as hp
 
 sys.path.append(os.environ.get("HIPPYFLOW_PATH"))
 import hippyflow as hf
-
-sys.path.append("../../")
-
 
 ################################################################################
 import argparse
@@ -25,7 +22,7 @@ from ndr_model import (nonlinear_diffusion_reaction_model,
 
 parser = argparse.ArgumentParser()
 parser.add_argument(
-    "-data_dir", "--data_dir", type=str, default="../../data/", help="Where to save"
+    "-data_dir", "--data_dir", type=str, default="data/", help="Where to save"
 )
 parser.add_argument(
     "-basis_type", "--basis_type", type=str, default="as", help="as or kle"
@@ -41,7 +38,7 @@ parser.add_argument(
     help="Active subspace oversample",
 )
 parser.add_argument(
-    "-ndata", "--ndata", type=int, default=15000, help="Number of samples"
+    "-ndata", "--ndata", type=int, default=1000, help="Number of samples"
 )
 
 args = parser.parse_args()
@@ -119,9 +116,9 @@ if args.basis_type.lower() == "as":
         print("||Psi^*Psi - I|| = ", orth_error)
         assert orth_error < 1e-5
     print(input_basis.shape, input_projector.shape)
-    np.save("AS_encoder_basis", input_basis)
-    np.save("AS_d_GN", d_GN)
-    np.save("AS_encoder_cobasis", input_projector)
+    np.save(data_dir + "AS_encoder_basis", input_basis)
+    np.save(data_dir + "AS_d_GN", d_GN)
+    np.save(data_dir + "AS_encoder_cobasis", input_projector)
 
     fig, ax = plt.subplots()
     ax.semilogy(np.arange(len(d_GN)), d_GN)
@@ -150,9 +147,9 @@ elif args.basis_type.lower() == "kle":
         print("||Psi^*Psi - I|| = ", orth_error)
         assert orth_error < 1e-5
 
-    np.save("KLE_basis", input_basis)
-    np.save("KLE_d", d_KLE)
-    np.save("KLE_projector", input_projector)
+    np.save(data_dir + "KLE_basis", input_basis)
+    np.save(data_dir + "KLE_d", d_KLE)
+    np.save(data_dir + "KLE_cobasis", input_projector)
 
 
 else:
