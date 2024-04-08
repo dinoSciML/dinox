@@ -76,20 +76,20 @@ def create_array_permuter(N, cp_random_seed=None) -> Callable:
 
     def permute_arrays(
         X: jax.Array,
-        Y: jax.Array,
-        dYdX: jax.Array,
-        Y_norms: jax.Array,
-        dYdX_norms: jax.Array,
+        fX: jax.Array,
+        dfX_dX: jax.Array,
+        fX_norms: jax.Array,
+        dfXdX_norms: jax.Array,
     ) -> Tuple[jax.Array]:
         perm = cp.random.permutation(indices)
 
         return (
             jax.dlpack.from_dlpack(cp.from_dlpack(jax.dlpack.to_dlpack(X))[perm]),
-            jax.dlpack.from_dlpack(cp.from_dlpack(jax.dlpack.to_dlpack(Y))[perm]),
-            jax.dlpack.from_dlpack(cp.from_dlpack(jax.dlpack.to_dlpack(dYdX))[perm]),
-            jax.dlpack.from_dlpack(cp.from_dlpack(jax.dlpack.to_dlpack(Y_norms))[perm]),
+            jax.dlpack.from_dlpack(cp.from_dlpack(jax.dlpack.to_dlpack(fX))[perm]),
+            jax.dlpack.from_dlpack(cp.from_dlpack(jax.dlpack.to_dlpack(dfX_dX))[perm]),
+            jax.dlpack.from_dlpack(cp.from_dlpack(jax.dlpack.to_dlpack(fX_norms))[perm]),
             jax.dlpack.from_dlpack(
-                cp.from_dlpack(jax.dlpack.to_dlpack(dYdX_norms))[perm]
+                cp.from_dlpack(jax.dlpack.to_dlpack(dfXdX_norms))[perm]
             ),
         )
 
@@ -104,18 +104,18 @@ def create_array_permuter_flat(N, cp_random_seed=None) -> Callable:
 
     def permute_arrays(
         X: jax.Array,
-        Y_dYdX: jax.Array,
-        Y_norms: jax.Array,
-        dYdX_norms: jax.Array,
+        fX_dYdX: jax.Array,
+        fX_norms: jax.Array,
+        dfXdX_norms: jax.Array,
     ) -> Tuple[jax.Array]:
         perm = cp.random.permutation(indices)
 
         return (
             jax.dlpack.from_dlpack(cp.from_dlpack(jax.dlpack.to_dlpack(X))[perm]),
-            jax.dlpack.from_dlpack(cp.from_dlpack(jax.dlpack.to_dlpack(Y_dYdX))[perm]),
-            jax.dlpack.from_dlpack(cp.from_dlpack(jax.dlpack.to_dlpack(Y_norms))[perm]),
+            jax.dlpack.from_dlpack(cp.from_dlpack(jax.dlpack.to_dlpack(fX_dYdX))[perm]),
+            jax.dlpack.from_dlpack(cp.from_dlpack(jax.dlpack.to_dlpack(fX_norms))[perm]),
             jax.dlpack.from_dlpack(
-                cp.from_dlpack(jax.dlpack.to_dlpack(dYdX_norms))[perm]
+                cp.from_dlpack(jax.dlpack.to_dlpack(dfXdX_norms))[perm]
             ),
         )
 
@@ -123,26 +123,26 @@ def create_array_permuter_flat(N, cp_random_seed=None) -> Callable:
 
 @eqx.filter_jit
 def slice_data_flat(
-    X: jax.Array, Y_dYdX: jax.Array, batch_size: int, end_idx: int
+    X: jax.Array, fX_dfXdX: jax.Array, batch_size: int, end_idx: int
 ) -> Tuple[jax.Array, jax.Array, jax.Array]:
     # No side effects
     return (
         end_idx + batch_size,
         dslice(X, end_idx, batch_size),
-        dslice(Y_dYdX, end_idx, batch_size),
+        dslice(fX_dfXdX, end_idx, batch_size),
     )
 
 
 @eqx.filter_jit
 def slice_data(
-    X: jax.Array, Y: jax.Array, dYdX: jax.Array, batch_size: int, end_idx: int
+    X: jax.Array, fX: jax.Array, dfXdX: jax.Array, batch_size: int, end_idx: int
 ) -> Tuple[jax.Array, jax.Array, jax.Array]:
     # No side effects
     return (
         end_idx + batch_size,
         dslice(X, end_idx, batch_size),
-        dslice(Y, end_idx, batch_size),
-        dslice(dYdX, end_idx, batch_size),
+        dslice(fX, end_idx, batch_size),
+        dslice(dfXdX, end_idx, batch_size),
     )
 
 
@@ -164,8 +164,13 @@ def load_pickle(file_path: Path) -> None:
         deserialized =  pickle.load(file)
     return deserialized
 
+def load_1D_jax_array_direct_to_gpu(file_path):
+    return jnp.asarray(
+        np.fromfile(file_path, like=LikeWrapper(np.empty(())), offset=128),
+        dtype=np.float64,
+    )
+
 def __load_shaped_jax_array_direct_to_gpu(file_path, shape):
-    # casts to float32 since that is the standard for jax
     return jnp.asarray(
         np.fromfile(file_path, like=LikeWrapper(np.empty(())), offset=128),
         dtype=np.float64,
@@ -177,13 +182,13 @@ def load_data_disk_direct_to_gpu(
 ) -> Tuple[jax.Array, jax.Array, jax.Array]:
     data_dir = data_config_dict["data_dir"]
     N = data_config_dict["N"]
-    X_filename, Y_filename, dYdX_filename = data_config_dict["data_filenames"]
+    X_filename, fX_filename, dfXdX_filename = data_config_dict["data_filenames"]
     X = __load_shaped_jax_array_direct_to_gpu(data_dir + X_filename, (N, -1))
-    Y = __load_shaped_jax_array_direct_to_gpu(data_dir + Y_filename, (N, -1))
-    dYdX = __load_shaped_jax_array_direct_to_gpu(
-        data_dir + dYdX_filename, (N, X.shape[1], -1)
+    fX = __load_shaped_jax_array_direct_to_gpu(data_dir + fX_filename, (N, -1))
+    dfXdX = __load_shaped_jax_array_direct_to_gpu(
+        data_dir + dfXdX_filename, (N, X.shape[1], -1)
     ) #N x X x Y, N x Y
-    return X, Y, dYdX
+    return X, fX, dfXdX
 
 
 def split_training_testing_data(

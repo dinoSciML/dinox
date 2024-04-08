@@ -30,7 +30,7 @@ def embed_data_in_encoder_decoder_subspaces(
     input_output_data: Tuple[jax.Array], encoder_decoder_config_dict: Dict
 ) -> Tuple[jax.Array]:
     # Disk IO side effects, stdout (printing) side effects exist
-    # returns reduced X, Y, and possibly dYdX: (if X, Y, dYdX = input_output_data)
+    # returns reduced X, fX, and possibly dfXdX: (if X, fX, dfXdX = input_output_data)
 
     # start_time = time.time()
     ################################################################################
@@ -47,10 +47,10 @@ def embed_data_in_encoder_decoder_subspaces(
     # Reduce the input data and save to file									   #
     ################################################################################
     if len(input_output_data) == 3:
-        X, Y, dYdX = input_output_data
+        X, fX, dfXdX = input_output_data
     else:
-        X, Y = input_output_data
-        dYdX = None
+        X, fX = input_output_data
+        dfXdX = None
     reduced_X = contract(
         "nx,xr->nr",
         X,
@@ -60,9 +60,9 @@ def embed_data_in_encoder_decoder_subspaces(
         backend="jax",
     )
 
-    reduced_Y = (
+    reduced_fX = (
         contract(
-            "nu,ur->nr",
+            "nf,fr->nr",
             Y,
             __load_shaped_jax_array_direct_to_gpu(
                 encoder_decoder_dir + decoder_filename, (Y.shape[1], -1)
@@ -74,37 +74,39 @@ def embed_data_in_encoder_decoder_subspaces(
     )
     if save_location:
         jnp.save(save_location + "X_reduced.npy", reduced_X)
-        jnp.save(save_location + "Y_reduced.npy", reduced_Y)
+        jnp.save(save_location + "fX_reduced.npy", reduced_fX)
         print("Saved embedded training data files to disk.")
-    if dYdX is not None:
+    if dfXdX is not None:
         #  Load the and project the Jacobian data with the encoder cobasis
-        reduced_dYdX = contract(
+        reduced_dfXdX = contract(
             "nxu,xr->nur",
-            dYdX,
+            dfXdX,
             __load_shaped_jax_array_direct_to_gpu(
                 encoder_decoder_dir + encoder_basis_filename, (X.shape[1], -1)
             ),
             backend="jax",
         )
         if save_location is not None:
-            jnp.save(save_location + "J_reduced.npy", reduced_dYdX)
+            jnp.save(save_location + "dfXdX_reduced.npy", reduced_dfXdX)
             jnp.savez(
                 save_location + reduced_zip_filename,
-                m_data=reduced_X,
-                q_data=reduced_Y,
-                J_data=reduced_dYdX,
+                X_data=reduced_X,
+                fX_data=reduced_fX,
+                dfXdX_data=reduced_dfXdX,
             )
             print("Saved zipped embedded training data file to disk.")
         print("Successfully reduced the data.")
-        return reduced_X, reduced_Y, reduced_dYdX
+        return reduced_X, reduced_fX, reduced_dfXdX
     else:
         if save_location is not None:
             jnp.savez(
-                save_location + reduced_zip_filename, m_data=reduced_X, q_data=reduced_Y
+                save_location + reduced_zip_filename, 
+                X_data=reduced_X,
+                dfXdX_data=reduced_fX
             )
             print("Saved zipped embedded training data file to disk.")
         print("Successfully reduced the data.")
-        return reduced_X, reduced_Y
+        return reduced_X, reduced_fX
 
 
 def main():

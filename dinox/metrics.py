@@ -99,7 +99,7 @@ def batch_mean_h1_seminorm_l2_errors_and_norms_flat(
             nn, dY, batch_size, X, Y_dYdX, Y_L2_norms, dYdX_L2_norms, end_idx):
 
     predicted_Y_dYdX = __value_and_jacrev_flattened(nn, dslice(X, end_idx, batch_size))
-    L2_i, L2Jac_i = \
+    Yhat_L2_norms, dYhatdX_L2_norms = \
         tuple(
             map(
                 lambda x : jnp.sum(x, axis=1), 
@@ -112,18 +112,18 @@ def batch_mean_h1_seminorm_l2_errors_and_norms_flat(
                     axis=1)
             )
         )
-    # L^2 norms of Y and dYdX
-    # square all entries
-    # split into two arrays, Ys and dYdXs
-    # sum the splits [:, 0:dY], [:, dY:], sum axis = 1    
+    # L^2 norms of Y and dYdX:
+    # 1) Square all entries
+    # 2) split into two arrays, Ys and dYdXs
+    # 3) sum the splits [:, 0:dY], [:, dY:], sum axis = 1    
     return jnp.array([
-        jnp.mean(L2_i),
-        jnp.mean(L2Jac_i),
+        jnp.mean(Yhat_L2_norms),
+        jnp.mean(dYhatdX_L2_norms),
         jnp.mean(
-            __normalize_values(L2_i, dslice(Y_L2_norms, end_idx, batch_size))
+            __normalize_values(Yhat_L2_norms, dslice(Y_L2_norms, end_idx, batch_size))
         ),
         jnp.mean(
-            __normalize_values(L2Jac_i, dslice(dYdX_L2_norms, end_idx, batch_size))
+            __normalize_values(dYhatdX_L2_norms, dslice(dYdX_L2_norms, end_idx, batch_size))
         )]
     )
 @eqx.filter_jit
@@ -133,7 +133,7 @@ def batch_mean_h1_seminorm_l2_errors_and_norms(nn, dM, batch_size, X, Y, dYdX, Y
     predicted_Y, predicted_dYdX = __value_and_jacrev(
         nn, dslice(X, end_idx, batch_size)
     )
-    L2_i, L2Jac_i = \
+    Yhat_L2_norms, dYhatdX_L2_norms = \
 vmap(jax.jit(lambda x: jnp.linalg.norm(x)**2))(predicted_Y.squeeze()-dslice(Y, end_idx, batch_size)),\
 vmap(jax.jit(lambda x: jnp.linalg.norm(x)**2))(predicted_dYdX.squeeze()-dslice(dYdX, end_idx, batch_size)) 
 #vmap(, axis=(0,0))(predicted_dYdX.squeeze(), dslice(dYdX, end_idx, batch_size))
@@ -149,13 +149,13 @@ vmap(jax.jit(lambda x: jnp.linalg.norm(x)**2))(predicted_dYdX.squeeze()-dslice(d
     #     axis=(1, 2),
     # )*2
     return jnp.array([
-        jnp.mean(L2_i),
-        jnp.mean(L2Jac_i),
+        jnp.mean(Yhat_L2_norms),
+        jnp.mean(dYhatdX_L2_norms),
         jnp.mean(
-            __normalize_values(L2_i, dslice(Y_L2_norms, end_idx, batch_size))
+            __normalize_values(Yhat_L2_norms, dslice(Y_L2_norms, end_idx, batch_size))
         ),
         jnp.mean(
-            __normalize_values(L2Jac_i, dslice(dYdX_L2_norms, end_idx, batch_size))
+            __normalize_values(dYhatdX_L2_norms, dslice(dYdX_L2_norms, end_idx, batch_size))
         )]
     )
 

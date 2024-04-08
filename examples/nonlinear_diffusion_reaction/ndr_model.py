@@ -119,20 +119,33 @@ def nonlinear_diffusion_reaction_model(settings):
     # targets[:, 1] = targets_yy.flatten()
 
     # targets everywhere
+    #FIX ME: tom/lianghao, someone, what would we like this to be. I need this fixed, not random
+    #we oculd define it randomly outside (np.random.uniform(0.1, 0.9, [ntargets, ndim]))
+    # and pass it in via settings['targets'] if we wish ,but not random. since
+    # we need it fixed for all problems
     targets = np.random.uniform(0.1, 0.9, [ntargets, ndim])
+
     if settings["verbose"]:
         print("Number of observation points: {0}".format(ntargets))
     misfit = hp.PointwiseStateObservation(Vh[hp.STATE], targets)
 
     utrue = pde.generate_state()
-    mtrue = true_parameter(prior, random=False)
-    x = [utrue, mtrue, None]
-    pde.solveFwd(x[hp.STATE], x)
-    misfit.B.mult(x[hp.STATE], misfit.d)
-    MAX = misfit.d.norm("linf")
-    noise_std_dev = rel_noise * MAX
+    # pick a noise stdev based on the rel_noise * the max Linf norm over N samples
+
+    noise_std_dev = 0.0
+    print("Determining noise standard deviation choice based on 50 random samples")
+    for i in range(50):
+        mtrue = true_parameter(prior, random=True)
+        x = [utrue, mtrue, None]
+        pde.solveFwd(x[hp.STATE], x)
+        misfit.B.mult(x[hp.STATE], misfit.d)
+        MAX = misfit.d.norm("linf")
+        noise_std_dev = max(rel_noise * MAX, noise_std_dev)
+
+
     hp.parRandom.normal_perturb(noise_std_dev, misfit.d)
     misfit.noise_variance = noise_std_dev * noise_std_dev
+    print("noise_std_dev =", noise_std_dev)
     if settings["plot"]:
         cbar = plt.scatter(
             targets[:, 0], targets[:, 1], c=misfit.d.get_local(), marker=",", s=10
@@ -147,7 +160,7 @@ def nonlinear_diffusion_reaction_model(settings):
         plt.close()
         np.save(output_path + "targets.npy", targets)
 
-    return pde, prior, misfit, mtrue
+    return pde, prior, misfit, mtrue, noise_std_dev
 
 
 # def true_parameter(prior):
