@@ -19,10 +19,10 @@ poetry install
 python -m dinox -network_name "<name_to_save_network_as>" -data_dir "<location_of_jacobian_enriched_training_data>"
 ```
 # Examples
-Currently, one can run in each application folder 
+Currently, one can run an application by running 
 
 ```
-python generate_data.py
+python generate_data.py --
 ```
 
 **if one has `HIPPYFLOW_PATH` and `HIPPYLIB_PATH` environmental variables set correctly and one has both of those libraries.** TODO: DO away with this. For the paper, we ought to provide two options.
@@ -31,7 +31,7 @@ python generate_data.py
 
 Currently, assumes data is stored in "m_data.npy", "q_data.npy", "J_data.npy". Will generalize soon for CLI passed in npy filenames, and for memmapped numpy arrays.. 
 
-
+# Note, the codebase needs to be generalized to work generally on CPUs. It also does not fully work on Apple Silicon (jax-metal has limitations)
 # Notes on why we require these packages:
 - `cupy` - for rapid permuting of data on GPUs
 - `kvikio` - for interfacing with NVIDIA GPU Direct Storage (GDS) for loading data directly to GPU, skipping the CPU
