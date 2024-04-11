@@ -20,7 +20,7 @@ import matplotlib.pyplot as plt
 # STATE, PARAMETER, ADJOINT = 0, 1, 2
 
 
-def nonlinear_diffusion_reaction_settings(settings={}):
+def settings(settings={}):
     settings["seed"] = 0  # Random seed
     settings["nx"] = 40  # Number of cells in each direction
 
@@ -35,7 +35,13 @@ def nonlinear_diffusion_reaction_settings(settings={}):
 
     # Likelihood specs
     settings["ntargets"] = 25
-    settings["rel_noise"] = 0.02
+    settings["rel_noises"] = [0.002, 0.005, 0.01, 0.02, 0.05]
+    settings["dQ"] = settings["ntargets"]
+    
+    np.random.seed(settings["seed"])
+    targets = np.random.uniform(0.1, 0.9, [settings["ntargets"], 2]) #define the targets once, based on the seed
+    settings["targets"] = targets
+
 
     # Printing and saving
     settings["verbose"] = False
@@ -60,15 +66,13 @@ def pde_varf(u, m, p):
     )
 
 
-def nonlinear_diffusion_reaction_model(settings):
-
-    np.random.seed(settings["seed"])
+def model(settings):
 
     output_path = settings["output_path"]
     if not os.path.exists(output_path):
         os.makedirs(output_path, exist_ok=True)
 
-    ndim = 2
+    # ndim = 2
     nx = settings["nx"]
     mesh = dl.UnitSquareMesh(nx, nx)
     Vh2 = dl.FunctionSpace(mesh, "Lagrange", 2)
@@ -105,7 +109,6 @@ def nonlinear_diffusion_reaction_model(settings):
         Vh[hp.PARAMETER], gamma, delta, anis_diff, robin_bc=True
     )
 
-    ntargets = settings["ntargets"]
     rel_noise = settings["rel_noise"]
 
     # Targets only on the bottom
@@ -118,15 +121,11 @@ def nonlinear_diffusion_reaction_model(settings):
     # targets[:, 0] = targets_xx.flatten()
     # targets[:, 1] = targets_yy.flatten()
 
-    # targets everywhere
-    #FIX ME: tom/lianghao, someone, what would we like this to be. I need this fixed, not random
-    #we oculd define it randomly outside (np.random.uniform(0.1, 0.9, [ntargets, ndim]))
-    # and pass it in via settings['targets'] if we wish ,but not random. since
-    # we need it fixed for all problems
-    targets = np.random.uniform(0.1, 0.9, [ntargets, ndim])
+    # targets everywhere #specified outside once
+    targets = settings["targets"]
 
     if settings["verbose"]:
-        print("Number of observation points: {0}".format(ntargets))
+        print("Number of observation points: {0}".format(settings["ntargets"]))
     misfit = hp.PointwiseStateObservation(Vh[hp.STATE], targets)
 
     utrue = pde.generate_state()

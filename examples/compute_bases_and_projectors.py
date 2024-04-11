@@ -1,4 +1,3 @@
-import math
 import os
 import sys
 import time
@@ -6,7 +5,6 @@ import time
 import dolfin as dl
 import matplotlib.pyplot as plt
 import numpy as np
-import ufl
 
 sys.path.append(os.environ.get("HIPPYLIB_PATH"))
 import hippylib as hp
@@ -17,12 +15,9 @@ import hippyflow as hf
 ################################################################################
 import argparse
 
-from ndr_model import (nonlinear_diffusion_reaction_model,
-                       nonlinear_diffusion_reaction_settings)
-
 parser = argparse.ArgumentParser()
 parser.add_argument(
-    "-data_dir", "--data_dir", type=str, default="data/", help="Where to save"
+    "-data_dir", "--data_dir", type=str, default="samples/", help="Where to save"
 )
 parser.add_argument(
     "-basis_type", "--basis_type", type=str, default="as", help="as or kle"
@@ -36,6 +31,9 @@ parser.add_argument(
     type=int,
     default=10,
     help="Active subspace oversample",
+)
+parser.add_argument(
+    "-problem_name", "--problem_name", type=str, default="nonlinear_diffusion_reaction", help="Problem name"
 )
 parser.add_argument(
     "-ndata", "--ndata", type=int, default=1000, help="Number of samples"
@@ -53,9 +51,13 @@ oversample = args.oversample
 
 ################################################################################
 # Set up the model
+import importlib
 
-settings = nonlinear_diffusion_reaction_settings()
-pde, prior, misfit, _ = nonlinear_diffusion_reaction_model(settings)
+problem_name = args.problem_name
+problem_dir = problem_name+"/"
+model_module = importlib.import_module(problem_name+".model")
+settings =  model_module.settings()
+_, prior, misfit, _ = model_module.model(settings) #only uses the prior settings
 
 assert dl.MPI.comm_world.size == 1, print("Not thought out in other cases yet")
 
