@@ -20,4 +20,4 @@ Therefore, really the only way to currently interface with/load up a BIP model i
 
 To run MCMC on ALL of the BIPS, one needs to vary BIP between [0,1,2,3] for each probelm in a PDE problem, e.g. each folder in `/storage/joshua/nonlinear_diffusion_reaction/problem/`.
 
-Please let Joshua Chen know if any permissions need to be changed. I plan to have everything be read-only, but write permissions within the folders allowed, so that one can define `MCMC_results` in `/storage/joshua/nonlinear_diffusion_reaction/problem/rel_noise_0.01_noise_stdev_0.009724453175183136/` for example.
+Please let Joshua Chen know if any permissions need to be changed. I believe I have set all permissions within the folders appropriately so that one can define `MCMC_results` in `/storage/joshua/nonlinear_diffusion_reaction/problem/rel_noise_0.01_noise_stdev_0.009724453175183136/` for example.
