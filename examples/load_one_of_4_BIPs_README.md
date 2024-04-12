@@ -1,9 +1,9 @@
 BIPs are loadable by running
 
-model, true_m_np = load_one_of_4_BIPs(PDEproblem_dir, BIPproblem_dir, BIP) forom the load_one_from_4_BIPS.py file
+`model, true_m_np = load_one_of_4_BIPs(PDEproblem_dir, BIPproblem_dir, BIP)` from the `load_one_from_4_BIPS.py` file
 
-model: a hippylib BIP model
-true_m_np: a numpy array of the `true` parameter that generated this particular model's synthetic data. In case its needed for prior/posterior predictive checks, or for any sort of results/plotting/etc. One would of course have to run m.set_local(true_m_np), where m is a dolfin parameter space vector, if one wants to do this.
+`model`: a hippylib BIP model
+`true_m_np`: a numpy array of the `true` parameter that generated this particular model's synthetic data. In case its needed for prior/posterior predictive checks, or for any sort of results/plotting/etc. One would of course have to run `m.set_local(true_m_np)`, where m is a dolfin parameter space vector, if one wants to do this.
 
 One way to do run this code is from the command line:
 
