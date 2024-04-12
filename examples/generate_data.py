@@ -8,8 +8,6 @@ sys.path.append(os.environ.get('HIPPYLIB_PATH'))
 import hippylib as hp
 sys.path.append(os.environ.get('HIPPYFLOW_PATH'))
 import hippyflow as hf
-# from dinox.data_utilities import load_1D_jax_array_direct_to_gpu
-import jax.experimental.sparse as jsparse
 
 def save_scipy_csr(filename, csr_matrix): #place this where?
     filename+="_csr"
@@ -17,18 +15,15 @@ def save_scipy_csr(filename, csr_matrix): #place this where?
     np.save(filename+"_indices", csr_matrix.indices)
     np.save(filename+"_indptr", csr_matrix.indptr)
     np.save(filename+"_shape", np.array(list(csr_matrix.shape)))
-# def load_jax_csr(filename):
-#     filename+="_csr"
-#     data = load_1D_jax_array_direct_to_gpu(filename+"_data.npy")
-#     indices = load_1D_jax_array_direct_to_gpu(filename+"_indices.npy")
-#     ind_ptr = load_1D_jax_array_direct_to_gpu(filename+"_ind_ptr.npy")
-#     shape = load_1D_jax_array_direct_to_gpu(filename+"_shape.npy")
-    # return jsparse.CSR(data, indices, ind_ptr, shape=tuple(shape))
 
 ################################################################################
 import argparse
 
 parser = argparse.ArgumentParser()
+
+parser.add_argument(
+    "-save_base_folder", "--save_base_folder", type=str, default="/storage/joshua/", help="Folder to save everything in"
+)
 
 parser.add_argument(
     "-problem_name", "--problem_name", type=str, default="nonlinear_diffusion_reaction", help="Problem name"
@@ -44,10 +39,11 @@ parser.add_argument(
 args = parser.parse_args()
 
 import importlib
+base_folder = args.save_base_folder
 problem_name = args.problem_name
-problem_dir = problem_name+"/"
+PDEproblem_dir = problem_name+"/"
 model_module = importlib.import_module(problem_name+".model")
-settings = model_module.settings()
+settings = model_module.settings() #random generation of points may hapepn here. Must only be done once.
 ################################################################################
 # Set up the model
 
@@ -57,50 +53,15 @@ for i, rel_noise in enumerate(settings['rel_noises']):  #(high variance may reve
      #usually we use 0.01 = 1% of max = stdev, which correpsonds to very roughly 1% "SNR", to make the inference problem harder
     # can try varying amounts
     settings["rel_noise"] = rel_noise
+    settings["output_path"] = base_folder+PDEproblem_dir+"/figures/"
     print(f"Sampling for a noise model based on a relative max Linf noise of {100*rel_noise}%")
     settings["seed"] = i #different seed for each set of problems, what about hippylib seed?
     pde, prior, misfit, mtrue, noise_stdev = model_module.model(settings)
+    BIPproblem_dir = f"{base_folder}{PDEproblem_dir}problem/rel_noise_{rel_noise}_noise_stdev_{noise_stdev}/"
+
     model = hp.Model(pde, prior, misfit)
 
-    ################################################################################
-    # Generate training data + synthetic data observations from likelihood
-
-    Vh = model.problem.Vh
-
-    mesh = Vh[hp.STATE].mesh()
-
-    B = model.misfit.B
-    observable = hf.LinearStateObservable(model.problem,B)
-    prior = model.prior
-
-    dQ = settings['dQ']
-    # Since the problems are
-    output_basis = np.eye(dQ)
-
-    dataGenerator = hf.DataGenerator(observable,prior, misfit) #just adding in misfit for access to the problems noise
-
-    nsamples = args.n_samples
-    problem_dir = f"{problem_dir}problem/rel_noise_{rel_noise}_noise_stdev_{noise_stdev}/"
-    data_dir = f"{problem_dir}samples/"
-
-    #saves m, f(m), y = f(m) + eta for several eta (n_independent_data_per_sample #)
-    dataGenerator.generate(nsamples, derivatives = (1,0),output_basis = output_basis, n_data_per_sample = n_iid_data_per_sample, data_dir = data_dir)
-
-    #resave as individual uncompressed arrays, for use with dinox
-
-    #This is the data used by DINOX to train the dino
-    mqy_data = np.load(data_dir + "mqy_data.npz")
-    np.save(data_dir + "X_data.npy", mqy_data["m_data"])
-    np.save(data_dir + "fX_data.npy", mqy_data["q_data"])
-    np.save(
-        data_dir + "dfXdX_data.npy", np.load(data_dir + "JstarPhi_data.npz")["JstarPhi_data"]
-    )
-
-    #This will be used if we need bayesian inference problems (pick an X and Y, for hte true M and true noisy data)
-    np.save(data_dir + "Y_data.npy", mqy_data["y_data"])
-
-    #Save prior parameters
-
+    asdfasdf
     #Extract BiLaplacianPrior parameters as discrete matrices, so that we don't rely on hippylib prior instantiation afterwards
     M_mat = dl.as_backend_type(prior.M).mat()
     row,col,val = M_mat.getValuesCSR()
@@ -112,7 +73,7 @@ for i, rel_noise in enumerate(settings['rel_noises']):  #(high variance may reve
     row,col,val = sqrtMPetsc.getValuesCSR() # I think they only give the csr, so we convert
     sqrtMcsr = ss.csr_matrix((val,col,row))
 
-    prior_params_dir = problem_dir+'prior/'
+    prior_params_dir = BIPproblem_dir+'prior/'
     os.makedirs(prior_params_dir, exist_ok=True)
     save_scipy_csr(prior_params_dir+"M", M_csr) #sort of redundant, each problems prior is the same, but whatever
     # print(M_csr - load_jax_csr(data_dir + "prior/M").todense(). max())
@@ -121,6 +82,129 @@ for i, rel_noise in enumerate(settings['rel_noises']):  #(high variance may reve
     np.save(prior_params_dir+"mean_function_coefficients.npy", prior.mean.get_local()) #sort of redundant, each problems prior is the same, but whatever
 
     #Save data/observation parameters
-    os.makedirs(problem_dir+'likelihood/',exist_ok=True)
-    np.save(problem_dir+"likelihood/noise_stdev.npy",noise_stdev)
-    np.save(problem_dir+"likelihood/observation_targets_coordinates.npy", settings["targets"] )
+    os.makedirs(BIPproblem_dir+'likelihood/',exist_ok=True)
+    np.save(BIPproblem_dir+"likelihood/noise_stdev.npy",noise_stdev)
+    np.save(BIPproblem_dir+"likelihood/observation_targets_coordinates.npy", settings["targets"] )
+
+    ################################################################################
+    # Generate training data + synthetic data observations from likelihood
+
+    Vh = model.problem.Vh
+
+    mesh = Vh[hp.STATE].mesh()
+
+    B = model.misfit.B
+    observable = hf.LinearStateObservable(model.problem,B)
+
+    dQ = settings['dQ']
+    # Since the problems are
+    output_basis = np.eye(dQ)
+
+    dataGenerator = hf.DataGenerator(observable,prior, misfit) #just adding in misfit for access to the problems noise
+
+    nsamples = args.n_samples
+    # os.makedirs(f"{base_folder}{problem_dir}",exist_ok=True)
+
+    true_data_dir = f"{BIPproblem_dir}true_samples/"
+
+    dataGenerator.generate(50, derivatives = (1,0),output_basis = output_basis, n_data_per_sample = n_iid_data_per_sample, data_dir = true_data_dir)
+    #This is the data used by DINOX to train the dino
+    mqy_data = np.load(true_data_dir + "mqy_data.npz")
+    np.save(true_data_dir + "X_data.npy", mqy_data["m_data"])
+    np.save(true_data_dir + "fX_data.npy", mqy_data["q_data"])
+    np.save(
+        true_data_dir + "dfXdX_data.npy", np.load(true_data_dir + "JstarPhi_data.npz")["JstarPhi_data"]
+    )
+    #This will be used if we need bayesian inference problems (pick an X and Y, for hte true M and true noisy data)
+    np.save(true_data_dir + "Y_data.npy", mqy_data["y_data"])
+
+
+for i, BIPproblem_sub_dir in enumerate(os.listdir(f"{base_folder}{PDEproblem_dir}problem")):  #(high variance may revert to the prior, low variance may revert too easily to near-gaussian around MAP ppoint)
+     #usually we use 0.01 = 1% of max = stdev, which correpsonds to very roughly 1% "SNR", to make the inference problem harder
+    # can try varying amounts
+    settings["rel_noise"] = rel_noise
+    settings["output_path"] = None
+    settings["seed"] = i #different seed for each set of problems, what about hippylib seed?
+    print("loading BIP dir",BIPproblem_sub_dir )
+
+    pde, prior, misfit, mtrue, _ = model_module.model(settings)
+    BIPproblem_dir = f"{base_folder}{PDEproblem_dir}problem/"+BIPproblem_sub_dir+"/"
+    noise_stdev = np.load(BIPproblem_dir+"likelihood/noise_stdev.npy")
+    misfit.noise_variance = noise_stdev*noise_stdev
+    
+    model = hp.Model(pde, prior, misfit)
+
+    ################################################################################
+    # Generate training data + synthetic data observations from likelihood
+
+    Vh = model.problem.Vh
+
+    mesh = Vh[hp.STATE].mesh()
+
+    B = model.misfit.B
+    observable = hf.LinearStateObservable(model.problem,B)
+
+    dQ = settings['dQ']
+    # Since the problems are
+    output_basis = np.eye(dQ)
+
+    dataGenerator = hf.DataGenerator(observable,prior, misfit) #just adding in misfit for access to the problems noise
+
+    nsamples = args.n_samples
+
+
+
+    data_dir = f"{BIPproblem_dir}samples/"
+
+    #saves m, f(m), y = f(m) + eta_i for several eta_i (n_independent_data_per_sample #)
+    dataGenerator.generate(nsamples, derivatives = (1,0),output_basis = output_basis, n_data_per_sample = n_iid_data_per_sample, data_dir = data_dir)
+
+    #resave as individual uncompressed arrays, for use with dinox
+
+    #This is the data used by DINOX to train the dino
+    mqy_data = np.load(data_dir + "mqy_data.npz")
+    np.save(data_dir + "X_data.npy", mqy_data["m_data"])
+    np.save(data_dir + "fX_data.npy", mqy_data["q_data"])
+    np.save(
+        data_dir + "dfXdX_data.npy", np.load(data_dir + "JstarPhi_data.npz")["JstarPhi_data"]
+    )
+    np.save(data_dir + "Y_data.npy", mqy_data["y_data"]) #in case we need them for the future
+
+    #Save prior parameters
+
+
+# save cli_args save_base_folder, problem_name, n_samples, n_iid_data_per_sample
+
+# def choose_4_random_data_and_save_to_disk(problems_base_dir, problem_name)
+    
+#     problem_dir = problem_name+"/"
+#     model_module = importlib.import_module(f"{problems_base_dir}{problem_name}+".model")
+#     settings = model_module.settings()
+#     ################################################################################
+#     # Set up the model
+
+#     n_iid_data_per_sample =
+
+#     settings["rel_noise"] = rel_noise
+
+#     pde, prior, misfit, mtrue, noise_stdev = model_module.model(settings)
+
+
+#     data = []
+#     while True:
+#         pick random data in y_data[24000:]
+#         #AS LONG AS THE L2 DISTANCE > PERCENTAGE OF L2 NORM 
+#         data.append()
+
+#     save BIP data indices to disk 
+
+
+# def instantiate_hippylib_BIP_model(problem_...., BIP_data_index_file)
+
+#     pde, prior, misfit, mtrue, noise_stdev = model_module.model(settings)
+#     misfit.d = data[index[i]]
+#     return hp.Model(pde, prior, misfit)
+    
+
+
+

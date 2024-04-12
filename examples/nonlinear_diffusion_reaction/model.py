@@ -35,7 +35,7 @@ def settings(settings={}):
 
     # Likelihood specs
     settings["ntargets"] = 25
-    settings["rel_noises"] = [0.002, 0.005, 0.01, 0.02, 0.05]
+    settings["rel_noises"] = [0.002, 0.005, 0.01, 0.02, 0.05] #used by generate_data.py
     settings["dQ"] = settings["ntargets"]
     
     np.random.seed(settings["seed"])
@@ -45,11 +45,11 @@ def settings(settings={}):
 
     # Printing and saving
     settings["verbose"] = False
-    settings["output_path"] = "./result/"
+    settings["output_path"] = "./figures/"
 
     # MCMC settings
     settings["k"] = 200
-    settings["plot"] = False
+    settings["plot"] = True
 
     return settings
 
@@ -69,7 +69,8 @@ def pde_varf(u, m, p):
 def model(settings):
 
     output_path = settings["output_path"]
-    if not os.path.exists(output_path):
+
+    if output_path is not None and not os.path.exists(output_path):
         os.makedirs(output_path, exist_ok=True)
 
     # ndim = 2
@@ -109,7 +110,7 @@ def model(settings):
         Vh[hp.PARAMETER], gamma, delta, anis_diff, robin_bc=True
     )
 
-    rel_noise = settings["rel_noise"]
+    rel_noise = settings.get("rel_noise")
 
     # Targets only on the bottom
     # Use this for uniformly distributed observation.
@@ -131,21 +132,23 @@ def model(settings):
     utrue = pde.generate_state()
     # pick a noise stdev based on the rel_noise * the max Linf norm over N samples
 
-    noise_std_dev = 0.0
-    print("Determining noise standard deviation choice based on 50 random samples")
-    for i in range(50):
-        mtrue = true_parameter(prior, random=True)
-        x = [utrue, mtrue, None]
-        pde.solveFwd(x[hp.STATE], x)
-        misfit.B.mult(x[hp.STATE], misfit.d)
-        MAX = misfit.d.norm("linf")
-        noise_std_dev = max(rel_noise * MAX, noise_std_dev)
-
-
-    hp.parRandom.normal_perturb(noise_std_dev, misfit.d)
-    misfit.noise_variance = noise_std_dev * noise_std_dev
-    print("noise_std_dev =", noise_std_dev)
-    if settings["plot"]:
+    if rel_noise is not None:
+        noise_std_dev = 0.0
+        print("Determining noise standard deviation choice based on 50 random samples")
+        for i in range(50):
+            mtrue = true_parameter(prior, random=True)
+            x = [utrue, mtrue, None]
+            pde.solveFwd(x[hp.STATE], x)
+            misfit.B.mult(x[hp.STATE], misfit.d)
+            MAX = misfit.d.norm("linf")
+            noise_std_dev = max(rel_noise * MAX, noise_std_dev)
+        hp.parRandom.normal_perturb(noise_std_dev, misfit.d)
+        misfit.noise_variance = noise_std_dev * noise_std_dev
+        print("noise_std_dev =", noise_std_dev)
+    else:
+        noise_std_dev = None
+        mtrue = None
+    if settings["plot"] and output_path is not None:
         cbar = plt.scatter(
             targets[:, 0], targets[:, 1], c=misfit.d.get_local(), marker=",", s=10
         )
