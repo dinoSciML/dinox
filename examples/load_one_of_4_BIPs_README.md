@@ -8,7 +8,7 @@ BIPs are loadable by running
 One way to do run this code is from the command line:
 
 `python load_one_of_4_BIPs.py -BIP 1 -BIP_problem_dir "/storage/joshua/nonlinear_diffusion_reaction/problem/rel_noise_0.01_noise_stdev_0.009724453175183136/"
--PDEproblem_base_dir "/workspace/josh/dinox/examples/"
+-PDEproblem_base_dir "/workspace/josh/dinox/examples/"`
 
 Since all of the problem data is stored in `/storage/joshua/nonlinear_diffusion_reaction/problem/`, you will have to pick one (or all) of the folders in this directory to run
 
