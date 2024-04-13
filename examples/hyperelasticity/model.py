@@ -33,13 +33,14 @@ def settings(settings={}):
 
     # Likelihood specs
     settings["ntargets"] = 32
-    settings["rel_noises"] = [0.002,0.005, 0.01, 0.03, 0.1]
-    settings["dQ"] = 2*settings["ntargets"]
+    settings["rel_noises"] = [0.002, 0.005, 0.01, 0.02, 0.05] #used by generate_data.py
+    settings["dQ"] = settings["ntargets"]*2
+
 
     # Printing and saving
     settings["verbose"] = True
     settings["output_path"] = "./result/"
-    settings["plot"] = True
+    settings["plot"] = False #plotting is broken
 
     # MCMC settings
     settings["k"] = 200
@@ -253,6 +254,8 @@ def HyperelasticityMisfit(prior, pde, Vu, settings):
     # if settings["verbose"]:
     #     print("Number of observation points: {0}".format(ntargets))
     # misfit = hp.PointwiseStateObservation(Vu, targets)
+    rel_noise = settings.get("rel_noise")
+
 
     ny_targets = math.floor(math.sqrt(ntargets / aspect_ratio))
     nx_targets = math.floor(ntargets / ny_targets)
@@ -268,27 +271,34 @@ def HyperelasticityMisfit(prior, pde, Vu, settings):
     settings["targets"] = targets
     misfit = hp.PointwiseStateObservation(Vu, targets)
 
-    noise_std_dev = 0.0
-    print("Determining noise standard deviation choice based on 50 random samples")
-    for i in range(50):
-        utrue = pde.generate_state()
-        mtrue = true_parameter(prior) #random true parameter
-        x = [utrue, mtrue, None]
-        pde.solveFwd(x[hp.STATE], x)
-        misfit.B.mult(x[hp.STATE], misfit.d)
-        MAX = misfit.d.norm("linf")
-        noise_std_dev = settings["rel_noise"] * MAX
+    utrue = pde.generate_state()
+    if rel_noise is not None:
+        noise_std_dev = 0.0
+        print("Determining noise standard deviation choice based on 50 random samples")
+        for i in range(50):
+            utrue = pde.generate_state()
+            mtrue = true_parameter(prior) #random true parameter
+            x = [utrue, mtrue, None]
+            pde.solveFwd(x[hp.STATE], x)
+            misfit.B.mult(x[hp.STATE], misfit.d)
+            MAX = misfit.d.norm("linf")
+            noise_std_dev = max(rel_noise * MAX, noise_std_dev)
         hp.parRandom.normal_perturb(noise_std_dev, misfit.d)
         misfit.noise_variance = noise_std_dev * noise_std_dev
-    print("noise_std_dev =", noise_std_dev)
+        print("noise_std_dev =", noise_std_dev)
+    else:
+        noise_std_dev = None
+
     return misfit, targets, noise_std_dev
 
 
 def model(settings):
     np.random.seed(settings["seed"])
     output_path = settings["output_path"]
-    if not os.path.exists(output_path):
+
+    if output_path is not None and not os.path.exists(output_path):
         os.makedirs(output_path, exist_ok=True)
+
 
     ndim = 2
     nx = settings["nx"]
@@ -315,7 +325,9 @@ def model(settings):
     prior = HyperelasticityPrior(Vh[PARAMETER], settings["sigma"], settings["rho"], anis_diff=anis_diff)
 
     misfit, targets, noise_stdev = HyperelasticityMisfit(prior, pde, Vh[STATE], settings)
-    if settings["plot"]:
+
+    if settings["plot"] and output_path is not None: #This code is irrelevant because right now
+        #we don't compute m true here. need to move plotting code to a separate place!
         obs_values = np.linalg.norm(misfit.d.get_local().reshape(settings["ntargets"], 2), axis=1)
         cbar = plt.scatter(targets[:, 0], targets[:, 1], c=obs_values, marker=",", s=10)
         plt.colorbar(cbar)
@@ -343,7 +355,10 @@ def model(settings):
         plt.savefig(output_path + "utrue.pdf", bbox_inches="tight")
         plt.close()
         np.save(output_path + "targets.npy", targets)
-    return pde, prior, misfit, mtrue, noise_stdev
+    rel_noise = settings.get("rel_noise")
+    mtrue = None
+
+    return pde, prior, misfit, mtrue, noise_stdev #mtrue kept only for legacy. Need to remove completely
 
 def true_parameter(prior):
     noise = dl.Vector()

@@ -1,6 +1,9 @@
+#THIS and all data generation/model problem codes should go in a common "problems" subrepo of DinoSciML i think. and people can refactor their codes
+#once we come to a consensus of the easiest format for problems.
 import os
 import sys
 import time
+
 
 import dolfin as dl
 import matplotlib.pyplot as plt

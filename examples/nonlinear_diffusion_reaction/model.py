@@ -33,7 +33,7 @@ def settings(settings={}):
     settings["theta1"] = 1.0
     settings["alpha"] = 0.25 * math.pi
 
-    # Likelihood specs
+    # Likelihood specsls
     settings["ntargets"] = 25
     settings["rel_noises"] = [0.002, 0.005, 0.01, 0.02, 0.05] #used by generate_data.py
     settings["dQ"] = settings["ntargets"]
