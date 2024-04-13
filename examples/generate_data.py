@@ -61,7 +61,6 @@ for i, rel_noise in enumerate(settings['rel_noises']):  #(high variance may reve
 
     model = hp.Model(pde, prior, misfit)
 
-    asdfasdf
     #Extract BiLaplacianPrior parameters as discrete matrices, so that we don't rely on hippylib prior instantiation afterwards
     M_mat = dl.as_backend_type(prior.M).mat()
     row,col,val = M_mat.getValuesCSR()
