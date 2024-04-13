@@ -69,6 +69,7 @@ for i, BIPproblem_sub_dir in enumerate(os.listdir(f"{base_folder}{PDEproblem_dir
     BIPproblem_dir = f"{base_folder}{PDEproblem_dir}problem/"+BIPproblem_sub_dir+"/"
     data_dir = BIPproblem_dir+"samples/"
     encoder_save_dir = BIPproblem_dir+"encoder/"
+    os.makedirs(encoder_save_dir, exist_ok=True)
     if args.basis_type.lower() == "as":
         ################################################################################
         # Load the data
