@@ -87,13 +87,16 @@ def create_array_permuter(N, cp_random_seed=None) -> Callable:
             jax.dlpack.from_dlpack(cp.from_dlpack(jax.dlpack.to_dlpack(X))[perm]),
             jax.dlpack.from_dlpack(cp.from_dlpack(jax.dlpack.to_dlpack(fX))[perm]),
             jax.dlpack.from_dlpack(cp.from_dlpack(jax.dlpack.to_dlpack(dfX_dX))[perm]),
-            jax.dlpack.from_dlpack(cp.from_dlpack(jax.dlpack.to_dlpack(fX_norms))[perm]),
+            jax.dlpack.from_dlpack(
+                cp.from_dlpack(jax.dlpack.to_dlpack(fX_norms))[perm]
+            ),
             jax.dlpack.from_dlpack(
                 cp.from_dlpack(jax.dlpack.to_dlpack(dfXdX_norms))[perm]
             ),
         )
 
     return permute_arrays
+
 
 def create_array_permuter_flat(N, cp_random_seed=None) -> Callable:
     # Has side effects! Stateful cp_random_seed
@@ -113,13 +116,16 @@ def create_array_permuter_flat(N, cp_random_seed=None) -> Callable:
         return (
             jax.dlpack.from_dlpack(cp.from_dlpack(jax.dlpack.to_dlpack(X))[perm]),
             jax.dlpack.from_dlpack(cp.from_dlpack(jax.dlpack.to_dlpack(fX_dYdX))[perm]),
-            jax.dlpack.from_dlpack(cp.from_dlpack(jax.dlpack.to_dlpack(fX_norms))[perm]),
+            jax.dlpack.from_dlpack(
+                cp.from_dlpack(jax.dlpack.to_dlpack(fX_norms))[perm]
+            ),
             jax.dlpack.from_dlpack(
                 cp.from_dlpack(jax.dlpack.to_dlpack(dfXdX_norms))[perm]
             ),
         )
 
     return permute_arrays
+
 
 @eqx.filter_jit
 def slice_data_flat(
@@ -149,26 +155,33 @@ def slice_data(
 def save_to_pickle(file_path: Path, data: Any) -> None:
     # Involves Disk I/O
     ext = file_path.suffix
-    if not ext:
+    if ext not in {'pkl','pickle','pk','pck','pcl','p'}:
         ext = ".pkl"
+    else:
+        ext = ""
     makedirs(file_path.parents[0], exist_ok=True)
-    with open(file_path.with_suffix(ext), "wb+") as file:
+    with open(file_path.with_suffix(file_path.suffix + ext), "wb+") as file:
         pickle.dump(data, file, pickle.HIGHEST_PROTOCOL)
+
 
 def load_pickle(file_path: Path) -> None:
     # Involves Disk I/O
     ext = file_path.suffix
-    if not ext:
+    if ext not in {'pkl','pickle','pk','pck','pcl','p'}:
         ext = ".pkl"
-    with open(file_path.with_suffix(ext), "rb") as file:
-        deserialized =  pickle.load(file)
+    else:
+        ext = ""
+    with open(file_path.with_suffix(file_path.suffix + ext), "rb") as file:
+        deserialized = pickle.load(file)
     return deserialized
+
 
 def load_1D_jax_array_direct_to_gpu(file_path):
     return jnp.asarray(
         np.fromfile(file_path, like=LikeWrapper(np.empty(())), offset=128),
         dtype=np.float64,
     )
+
 
 def __load_shaped_jax_array_direct_to_gpu(file_path, shape):
     return jnp.asarray(
@@ -180,14 +193,14 @@ def __load_shaped_jax_array_direct_to_gpu(file_path, shape):
 def load_data_disk_direct_to_gpu(
     data_config_dict: Dict,
 ) -> Tuple[jax.Array, jax.Array, jax.Array]:
-    data_dir = data_config_dict["data_dir"]
+    data_dir = data_config_dict["samples_dir"]
     N = data_config_dict["N"]
     X_filename, fX_filename, dfXdX_filename = data_config_dict["data_filenames"]
     X = __load_shaped_jax_array_direct_to_gpu(data_dir + X_filename, (N, -1))
     fX = __load_shaped_jax_array_direct_to_gpu(data_dir + fX_filename, (N, -1))
     dfXdX = __load_shaped_jax_array_direct_to_gpu(
         data_dir + dfXdX_filename, (N, X.shape[1], -1)
-    ) #N x X x Y, N x Y
+    )  # N x X x Y, N x Y
     return X, fX, dfXdX
 
 
@@ -202,7 +215,10 @@ def split_training_testing_data(
         # data = X,Y,dYdX
         # Y_norms, dYdX_norms = [vmap(jnp.linalg.norm)(array) for array in data[1:]]
         print("Computing data norms for relative error calculations")
-        data = list(data) + [vmap(jax.jit(lambda x: jnp.linalg.norm(x)**2))(array) for array in data[1:]]
+        data = list(data) + [
+            vmap(jax.jit(lambda x: jnp.linalg.norm(x) ** 2))(array)
+            for array in data[1:]
+        ]
 
     n_data, dM = data[0].shape
     assert all((array.shape[0] == n_data for array in data))
@@ -211,7 +227,6 @@ def split_training_testing_data(
         [array[:n_train] for array in data],
         [array[n_train:n_train_test] for array in data],
     )
-
 
 
 def split_training_testing_data_flat(
@@ -222,11 +237,14 @@ def split_training_testing_data_flat(
     n_train = data_config_dict["train_data_size"]
     n_train_test = n_train + n_test
     if calculate_norms:
-        # data = X,Y,dYdX -> X, Y_dYdX # Y_dYdX = [Y, flatten(dYdX)] where flatten 
-        #takes dY x dX -> [dX dX dX...dY times]
+        # data = X,Y,dYdX -> X, Y_dYdX # Y_dYdX = [Y, flatten(dYdX)] where flatten
+        # takes dY x dX -> [dX dX dX...dY times]
         print("Computing data norms for relative error calculations")
         Y_dYdX = jnp.concatenate([data[1], vmap(lambda x: x.ravel())(data[2])], axis=1)
-        data = [data[0],Y_dYdX]+ [vmap(jax.jit(lambda x: jnp.linalg.norm(x)**2))(array) for array in data[1:]]
+        data = [data[0], Y_dYdX] + [
+            vmap(jax.jit(lambda x: jnp.linalg.norm(x) ** 2))(array)
+            for array in data[1:]
+        ]
     n_data, dM = data[0].shape
     print(n_data, n_train, n_test)
 
@@ -236,4 +254,3 @@ def split_training_testing_data_flat(
         [array[:n_train] for array in data],
         [array[n_train:n_train_test] for array in data],
     )
-
