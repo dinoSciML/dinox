@@ -17,34 +17,41 @@
 
 import sys
 import time
-from pathlib import Path
-from os import makedirs
 import equinox as eqx
 import jax
 import jax.numpy as jnp
 import jax.random as jr
 import optax  # optax, eqx are dependencies of dinox
 
-from .data_utilities import (create_array_permuter,
-                             create_array_permuter_flat,
-                             load_data_disk_direct_to_gpu, save_to_pickle,
-                             slice_data, split_training_testing_data, split_training_testing_data_flat,
-                             slice_data_flat,
-                             sub_dict)
+from .data_utilities import (
+    create_array_permuter,
+    create_array_permuter_flat,
+    load_data_disk_direct_to_gpu,
+    save_to_pickle,
+    slice_data,
+    split_training_testing_data,
+    split_training_testing_data_flat,
+    slice_data_flat,
+    sub_dict,
+)
 from .embed_data import embed_data_in_encoder_decoder_subspaces
-from .metrics import (batched_compute_h1_loss_metrics, compute_h1_loss_metrics,
-create_compute_h1_loss_metrics,
-compute_h1_loss_metrics_flat,
-__grad_mean_h1_seminorm_loss,
-grad_mean_h1_seminorm_loss_flattened,
-create_grad_mean_h1_seminorm_loss,
-#compute_l2_loss_metrics, 
-                      take_l2_step,
-                      take_h1_step)
+from .metrics import (
+    batched_compute_h1_loss_metrics,
+    compute_h1_loss_metrics,
+    create_compute_h1_loss_metrics,
+    compute_h1_loss_metrics_flat,
+    __grad_mean_h1_seminorm_loss,
+    grad_mean_h1_seminorm_loss_flattened,
+    create_grad_mean_h1_seminorm_loss,
+    # compute_l2_loss_metrics,
+    take_l2_step,
+    take_h1_step,
+)
 
 from .nn_factories import instantiate_nn
 
 # TODO: f = create_encoder_decoder_nn_from_embedded_dino(nn_approximator, basis, cobasis)
+
 
 def train_nn_approximator(
     *,
@@ -52,7 +59,7 @@ def train_nn_approximator(
     training_data,
     testing_data,
     permute_key,
-    training_config_dict
+    training_config_dict,
 ):
     # DOCUMENT ME, remainder not allowed
     # returns the trained equinox nn and results dictionary
@@ -71,7 +78,7 @@ def train_nn_approximator(
     # Check if batch_size evenly divides the testing and training data
     ####################################################################################
     n_train, dM = training_data[0].shape
-    dY = int(training_data[1].shape[1]/(dM+1))
+    dY = int(training_data[1].shape[1] / (dM + 1))
     n_test = testing_data[0].shape[0]
     n_train_batches, remainder = divmod(n_train, batch_size)
     n_test_batches, remainder_test = divmod(n_test, batch_size)
@@ -87,7 +94,7 @@ def train_nn_approximator(
     # permute_testing_training_arrays = create_array_permuter(n_train + n_test, 777)
     # permute_training_arrays = create_array_permuter(n_train, 77)
     # permute_testing_arrays = create_array_permuter(n_test)
-    
+
     permute_training_arrays_flat = create_array_permuter_flat(n_train, 77)
     permute_testing_arrays_flat = create_array_permuter_flat(n_test, 77)
 
@@ -100,17 +107,18 @@ def train_nn_approximator(
         take_step = eqx.filter_jit(take_l2_step)
     else:
         # FUTURE TODO: #do this outside of here so that it doesnt rejit for each problem with the same dM and batchsize? if we have this in an outside loop
-       
+
         # take_step = eqx.filter_jit(take_h1_step)
         print("Create grad and loss functions")
 
-        grad_loss = create_grad_mean_h1_seminorm_loss(dM) #__grad_mean_h1_seminorm_loss doesnt work yet
-        grad_loss_flattened = grad_mean_h1_seminorm_loss_flattened #testing this
+        grad_loss = create_grad_mean_h1_seminorm_loss(
+            dM
+        )  # __grad_mean_h1_seminorm_loss doesnt work yet
+        grad_loss_flattened = grad_mean_h1_seminorm_loss_flattened  # testing this
         compute_loss_metrics_new = batched_compute_h1_loss_metrics
         compute_loss_metrics_old = compute_h1_loss_metrics
         compute_loss_metrics_really_old = create_compute_h1_loss_metrics(dM, batch_size)
         compute_loss_metrics__flat = compute_h1_loss_metrics_flat
-
 
     ####################################################################################
     # Setup, instantiate and initialize the optax optimizer 						   #
@@ -121,7 +129,7 @@ def train_nn_approximator(
         lr_schedule = optax.piecewise_constant_schedule(
             init_value=training_config_dict["step_size"],
             boundaries_and_scales={
-                int(num_train_steps * 0.9): 0.1,
+                int(num_train_steps * 0.8): 0.1,
             },
         )
     else:
@@ -131,6 +139,10 @@ def train_nn_approximator(
     optimizer = optax.__getattribute__(optimizer_name)(learning_rate=lr_schedule)
     # Initialize optimizer with eqx state (its pytree of weights)
     optimizer_state = optimizer.init(eqx.filter(nn, eqx.is_inexact_array))
+
+    #following https://docs.kidger.site/equinox/tricks/#low-overhead-training-loops
+    flat_nn, treedef_nn = jax.tree_util.tree_flatten(nn) 
+    flat_optimizer_state, treedef_optimizer_state = jax.tree_util.tree_flatten(optimizer_state)
 
     # @eqx.filter_jit
     # def take_step(
@@ -143,6 +155,18 @@ def train_nn_approximator(
     #     return optimizer_state, eqx.apply_updates(nn, updates)
 
     @eqx.filter_jit
+    def take_tree_flattened_step(
+        flat_optimizer_state, flat_nn: eqx.Module, X: jax.Array, Y_dYdX: jax.Array
+    ):
+        nn = jax.tree_util.tree_unflatten(treedef_nn, flat_nn)
+        # optimizer_state = jax.tree_util.tree_unflatten(treedef_optimizer_state, flat_optimizer_state)
+        updates, optimizer_state = optimizer.update(
+            grad_loss_flattened(nn, X, Y_dYdX), jax.tree_util.tree_unflatten(treedef_optimizer_state, flat_optimizer_state), nn
+        )
+        return jax.tree_util.tree_leaves(optimizer_state), jax.tree_util.tree_leaves(eqx.apply_updates(nn, updates))
+
+
+    @eqx.filter_jit
     def take_step_flattened(
         optimizer_state, nn: eqx.Module, X: jax.Array, Y_dYdX: jax.Array
     ):
@@ -151,7 +175,7 @@ def train_nn_approximator(
             grad_loss_flattened(nn, X, Y_dYdX), optimizer_state, nn
         )
         return optimizer_state, eqx.apply_updates(nn, updates)
-          
+
     ####################################################################################
     # Setup data structures for storing training results
     ####################################################################################
@@ -160,9 +184,9 @@ def train_nn_approximator(
     ####################################################################################
     # Train the neural network
     ###################################################################################
-    metrics_history_train = jnp.empty((n_epochs, 3), dtype=jnp.float32)
+    # metrics_history_train = jnp.empty((n_epochs, 3), dtype=jnp.float32)
     metrics_history_test = jnp.empty((n_epochs, 3), dtype=jnp.float64)
-    metrics_history_train2 = jnp.empty((n_epochs, 3), dtype=jnp.float32)
+    # metrics_history_train2 = jnp.empty((n_epochs, 3), dtype=jnp.float32)
     metrics_history_train_old = jnp.empty((n_epochs, 3), dtype=jnp.float64)
     print("Starting training, first epoch may take a bit (jit compilations)")
     for epoch in jnp.arange(1, n_epochs + 1):
@@ -178,7 +202,6 @@ def train_nn_approximator(
         #         training_config_dict["data"],
         #     )
         # permute with cupy vs permute_key,
-        
 
         # permuted_training_data = permute_training_arrays(*training_data)
         # X, Y, dYdX, _, _ = permuted_training_data
@@ -195,10 +218,14 @@ def train_nn_approximator(
             end_idx, X_batch, Y_dYdX_batch = slice_data_flat(
                 X, Y_dYdX, batch_size, end_idx
             )
-            optimizer_state, nn = take_step_flattened( #optimizer.update,
-                optimizer_state, nn, X_batch, Y_dYdX_batch
+            # optimizer_state, nn = take_step_flattened(  # optimizer.update,
+            #     optimizer_state, nn, X_batch, Y_dYdX_batch
+            # )
+            flat_optimizer_state, flat_nn = take_tree_flattened_step(  # optimizer.update,
+                flat_optimizer_state, flat_nn,  X_batch, Y_dYdX_batch
             )
-            # optimizer_state, nn = take_step( #optimizer.update,
+
+            # optimizer_state, nn = take_step( #optimizer.update,   
             #     optimizer_state, nn, X_batch, Y_batch, dYdX_batch
             # )
         # epoch_time = time.time() - start_time
@@ -211,40 +238,38 @@ def train_nn_approximator(
         # print("really old time:", time.time() - start)
         # start = time.time()
         # Post-process and compute metrics after each epoch
-        if epoch % 10 == 0:
-            print(epoch)
-            metrics_history_train_old = metrics_history_train_old.at[epoch - 1].set(
-                compute_loss_metrics__flat(nn, dY, batch_size, n_train_batches,*permuted_training_data)  # N x 3
-            )
-            # print("old time:", time.time() - start)
+        # if epoch % 10 == 0:
+        nn = jax.tree_util.tree_unflatten(treedef_nn, flat_nn)
 
-            # start = time.time()
-            # # Post-process and compute metrics after each epoch
-            # metrics_history_train = metrics_history_train.at[epoch - 1].set(
-            #     compute_loss_metrics_new(nn, dM, batch_size, n_train_batches,*permuted_training_data)  # N x 3
-            # )
-            # print("scan time:", time.time() - start)
+        metrics_history_train_old = metrics_history_train_old.at[epoch - 1].set(
+            compute_loss_metrics__flat(
+                nn, dY, n_train, 1, *permuted_training_data
+            )  # N x 3
+        )
+        # print("old time:", time.time() - start)
 
-            permuted_test_data = permute_testing_arrays_flat(*testing_data)
+        # start = time.time()
+        # # Post-process and compute metrics after each epoch
+        # metrics_history_train = metrics_history_train.at[epoch - 1].set(
+        #     compute_loss_metrics_new(nn, dM, batch_size, n_train_batches,*permuted_training_data)  # N x 3
+        # )
+        # print("scan time:", time.time() - start)
 
-            metrics_history_test = metrics_history_test.at[epoch - 1].set(
-                compute_loss_metrics__flat(nn, dY, batch_size, n_test_batches, *permuted_test_data)  # N x 3
-            )
-            # metric_time = time.time() - start
+        metrics_history_test = metrics_history_test.at[epoch - 1].set(
+            compute_loss_metrics__flat(
+                nn, dY, n_test, 1, *testing_data
+            )  # N x 3
+        )
+        # metric_time = time.time() - start
 
-            # metrics_history['epoch_time'][epoch] = epoch_time
-
+        # metrics_history['epoch_time'][epoch] = epoch_time
+        if (epoch % 10) == 0: 
             print(
                 f"train epoch: {epoch}, "
-            #     f"loss: {(metrics_history_train[epoch-1, 2]):.4f}, "
-            #     f"accuracy l2 : {(metrics_history_train[epoch-1, 0] * 100):.4f}, "
-            #     f"accuracy h1 : {(metrics_history_train[epoch-1, 1] * 100):.4f}"
+                #     f"loss: {(metrics_history_train[epoch-1, 2]):.4f}, "
+                #     f"accuracy l2 : {(metrics_history_train[epoch-1, 0] * 100):.4f}, "
+                #     f"accuracy h1 : {(metrics_history_train[epoch-1, 1] * 100):.4f}"
             )
-            # print(
-            #     f"      REALLY OLD: loss: {(metrics_history_train2[epoch-1, 2]):.4f}, "
-            #     f"accuracy l2 : {(metrics_history_train2[epoch-1, 0] * 100):.4f}, "
-            #     f"accuracy h1 : {(metrics_history_train2[epoch-1, 1] * 100):.4f}"
-            # )
             print(
                 f"            OLD: loss: {(metrics_history_train_old[epoch-1, 2]):.4f}, "
                 f"accuracy l2 : {(metrics_history_train_old[epoch-1, 0] * 100):.4f}, "
@@ -256,9 +281,9 @@ def train_nn_approximator(
                 f"accuracy l2: {(metrics_history_test[epoch-1, 0] * 100):.4f}, "
                 f"accuracy h1: {(metrics_history_test[epoch-1, 1] * 100):.4f}"
             )
-        # print('Max test accuracy L2 = ', 100*np.max(np.array(metrics_history['test_accuracy_l2'])))
-        # print('Max test accuracy H1 (semi-norm) = ', 100*np.max(np.array(metrics_history['test_accuracy_h1'])))
-        # print('The metrics took', metric_time, 's')
+
+    # print('Max test accuracy L2 = ', 100*np.max((metrics_history_test[:, 0] * 100)))
+    # print('Max test accuracy H1 (semi-norm) = ', 100*np.max(np.array(metrics_history['test_accuracy_h1'])))
 
     # metrics_history_train and metrics_history_test are stored as N_iters x 3
     training_results_dict = {}
@@ -266,13 +291,14 @@ def train_nn_approximator(
         training_results_dict["train_accuracy_l2"],
         training_results_dict["train_accuracy_h1"],
         training_results_dict["train_loss"],
-    ) = metrics_history_train.T
+    ) = metrics_history_train_old.T
     (
-        training_results_dict["test_accuracy_h1"],
         training_results_dict["test_accuracy_l2"],
+        training_results_dict["test_accuracy_h1"],
         training_results_dict["test_loss"],
     ) = metrics_history_test.T
     print("Total time", time.time() - start_time)
+    nn = jax.tree_util.tree_unflatten(treedef_nn, flat_nn)
     return nn, training_results_dict
 
 
@@ -303,7 +329,7 @@ def train_dino_in_embedding_space(random_seed, embedded_training_config_dict):
     if (encodec_dict["encode"] or encodec_dict["decode"]) and data_config_dict.get(
         "reduced_data_filenames"
     ) is None:
-       # Disk I/O
+        # Disk I/O
         print("Embedding data in encoder subspace")
         data = embed_data_in_encoder_decoder_subspaces(data, encodec_dict)
         # config_dict['encoder_decoder']['last_layer_bias'] = np.mean(training_data['q_data'],axis = 0)
@@ -325,14 +351,15 @@ def train_dino_in_embedding_space(random_seed, embedded_training_config_dict):
     nn_config_dict = config_dict["nn"]
     nn_config_dict["input_size"] = training_data[0].shape[1]
     # nn_config_dict["output_size"] = training_data[1].shape[1]
-    nn_config_dict["output_size"] = int(training_data[1].shape[1]/(nn_config_dict["input_size"] +1))
-    #forward_output_size, jacobian_size = 
+    nn_config_dict["output_size"] = int(
+        training_data[1].shape[1] / (nn_config_dict["input_size"] + 1)
+    )
+    # forward_output_size, jacobian_size =
 
     print("Instantiating the NN, takes a few seconds")
 
     untrained_approximator, permute_key = instantiate_nn(
-        nn_config_dict=nn_config_dict,
-        key=jr.key(random_seed)
+        nn_config_dict=nn_config_dict, key=jr.key(random_seed)
     )
     config_dict["training"]["data"] = config_dict[
         "data"
@@ -345,33 +372,4 @@ def train_dino_in_embedding_space(random_seed, embedded_training_config_dict):
         training_config_dict=config_dict["training"],
     )
 
-    #################################################################################
-    # Save training metrics results to disk							                #
-    #################################################################################
-    # Disk I/O
-    network_serialization_config_dict = config_dict["network_serialization"]
-    save_name = network_serialization_config_dict["network_name"]
-    # logger = {'reduced':training_logger} #,'full': final_logger}
-    logging_dir = "training_results"
-    save_to_pickle(Path(logging_dir, save_name), training_results_dict)
-
-    #################################################################################
-    # Save neural network parameters to disk (serialize the equinox pytrees)        #
-    #################################################################################
-    # Disk I/O
-    if network_serialization_config_dict["save_weights"]:
-        # eqx nn weights serialization
-        makedirs(network_serialization_config_dict['trained_nn'], exist_ok=True)
-        eqx.tree_serialise_leaves(
-            f"{network_serialization_config_dict['trained_nn']}{save_name}.eqx",
-            trained_approximator,
-        )
-        #eqx nn class serialization
-        save_to_pickle(Path(network_serialization_config_dict['trained_nn'], save_name), network_serialization_config_dict["nn"]) 
-    #################################################################################
-    # Save config file for reproducibility                                          #
-    #################################################################################
-    cli_dir = "cli"
-    # Disk I/O
-    save_to_pickle(Path(cli_dir, save_name), config_dict)
-    return trained_approximator
+    return trained_approximator, training_results_dict

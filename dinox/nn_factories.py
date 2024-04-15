@@ -16,12 +16,12 @@
 # Contact: joshuawchen@icloud.com | tom.olearyroseberry@utexas.edu
 
 import math
+import os
 from typing import Any, Callable, Dict, Tuple
 
 import equinox as eqx
 import jax
 import jax.nn
-import jax.numpy as jnp
 import jax.random as jr
 
 # This file contains utilities for initializing equinox (build on jax) neural networks
@@ -53,11 +53,11 @@ def GenericDenseFactory(
 
 
 def instantiate_uninitialized_nn(
-    *, nn_config_dict: Dict[str, Any], key: jr.PRNGKey=jr.key(0)
+    *, nn_config_dict: Dict[str, Any], key: jr.PRNGKey = jr.key(0)
 ) -> eqx.Module:
     "DOCUMENT ME"
-    #by default uses random seed = 0, if one does not actually need the initialization
-    #i.e. if we are going to reinitialize the weights anyways
+    # by default uses random seed = 0, if one does not actually need the initialization
+    # i.e. if we are going to reinitialize the weights anyways
     # No side effects
     if nn_config_dict["architecture"] == "generic_dense":
         relevant_params = [
@@ -103,8 +103,9 @@ def __init_linear_layer_weights(
     new_model = eqx.tree_at(get_weights, model, new_weights)
     return new_model
 
+
 def instantiate_nn(
-    *, nn_config_dict: Dict, key: jr.PRNGKey=jr.key(0)
+    *, nn_config_dict: Dict, key: jr.PRNGKey = jr.key(0)
 ) -> Tuple[eqx.Module, jr.PRNGKey]:
     """
     This function sets up the dino network for training
@@ -143,4 +144,5 @@ def instantiate_nn(
         eqx_nn_approximator = __init_linear_layer_weights(
             eqx_nn_approximator, __truncated_normal, model_key
         )
+    eqx.tree_pprint
     return eqx_nn_approximator, permute_key

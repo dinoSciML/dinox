@@ -22,7 +22,7 @@ import jax.numpy as jnp
 from kvikio.numpy import LikeWrapper  # kvikio is optional dependency?
 from opt_einsum import contract  # opt_einsum is a dependency
 
-from .data_utilities import __load_shaped_jax_array_direct_to_gpu
+from .data_utilities import __load_shaped_jax_array_direct_to_gpu, makedirs
 
 
 # TODO: python dinox.embed_data --cli_args which uses the CLI arguments from reduce_data.py (deprecated -- to be removed)
@@ -36,7 +36,7 @@ def embed_data_in_encoder_decoder_subspaces(
     ################################################################################
     # Grab variables from config												   #
     ################################################################################
-    save_location = encoder_decoder_config_dict.get("save_location")
+    save_dir = encoder_decoder_config_dict.get("save_dir")
     encoder_decoder_dir = encoder_decoder_config_dict["encoder_decoder_dir"]
     encoder_basis_filename = encoder_decoder_config_dict["encoder_basis_filename"]
     encoder_cobasis_filename = encoder_decoder_config_dict["encoder_cobasis_filename"]
@@ -63,18 +63,19 @@ def embed_data_in_encoder_decoder_subspaces(
     reduced_fX = (
         contract(
             "nf,fr->nr",
-            Y,
+            fX,
             __load_shaped_jax_array_direct_to_gpu(
-                encoder_decoder_dir + decoder_filename, (Y.shape[1], -1)
+                encoder_decoder_dir + decoder_filename, (fX.shape[1], -1)
             ),
             backend="jax",
         )
         if decoder_filename
-        else Y
+        else fX
     )
-    if save_location:
-        jnp.save(save_location + "X_reduced.npy", reduced_X)
-        jnp.save(save_location + "fX_reduced.npy", reduced_fX)
+    if save_dir:
+        makedirs(save_dir, exist_ok=True)
+        jnp.save(save_dir + "X_reduced.npy", reduced_X)
+        jnp.save(save_dir + "fX_reduced.npy", reduced_fX)
         print("Saved embedded training data files to disk.")
     if dfXdX is not None:
         #  Load the and project the Jacobian data with the encoder cobasis
@@ -86,10 +87,10 @@ def embed_data_in_encoder_decoder_subspaces(
             ),
             backend="jax",
         )
-        if save_location is not None:
-            jnp.save(save_location + "dfXdX_reduced.npy", reduced_dfXdX)
+        if save_dir:
+            jnp.save(save_dir + "dfXdX_reduced.npy", reduced_dfXdX)
             jnp.savez(
-                save_location + reduced_zip_filename,
+                save_dir + reduced_zip_filename,
                 X_data=reduced_X,
                 fX_data=reduced_fX,
                 dfXdX_data=reduced_dfXdX,
@@ -98,11 +99,9 @@ def embed_data_in_encoder_decoder_subspaces(
         print("Successfully reduced the data.")
         return reduced_X, reduced_fX, reduced_dfXdX
     else:
-        if save_location is not None:
+        if save_dir:
             jnp.savez(
-                save_location + reduced_zip_filename, 
-                X_data=reduced_X,
-                dfXdX_data=reduced_fX
+                save_dir + reduced_zip_filename, X_data=reduced_X, dfXdX_data=reduced_fX
             )
             print("Saved zipped embedded training data file to disk.")
         print("Successfully reduced the data.")
