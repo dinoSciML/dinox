@@ -1,17 +1,20 @@
 # Author: Lianghao Cao
 # Date: 01/24/2024
 # This code (the line search algoirthm) is partially provided by Tom O'Leary and written by D.C. Luo
-import numpy as np
 import math
-import os, ufl
+import os
+import time
+
 import dolfin as dl
-import scipy.sparse as sp
-import scipy.sparse.linalg as spla
-import matplotlib.pyplot as plt
+
 # from scipy.sparse import csc_matrix, csr_matrix
 # from scipy.sparse import linalg as spla
 import hippylib as hp
-import time
+import matplotlib.pyplot as plt
+import numpy as np
+import scipy.sparse as sp
+import scipy.sparse.linalg as spla
+import ufl
 
 STATE, PARAMETER, Adjoint = 0, 1, 2
 dl.set_log_level(dl.LogLevel.ERROR)
@@ -33,8 +36,8 @@ def settings(settings={}):
 
     # Likelihood specs
     settings["ntargets"] = 32
-    settings["rel_noises"] = [0.002,0.005, 0.01, 0.03, 0.1]
-    settings["dQ"] = 2*settings["ntargets"]
+    settings["rel_noises"] = [0.002, 0.005, 0.01, 0.03, 0.1]
+    settings["dQ"] = 2 * settings["ntargets"]
 
     # Printing and saving
     settings["verbose"] = True
@@ -45,11 +48,14 @@ def settings(settings={}):
     settings["k"] = 200
     return settings
 
+
 def left_boundary(x, on_boundary):
     return on_boundary and (x[0] < dl.DOLFIN_EPS)
 
+
 def right_boundary(x, on_boundary):
     return on_boundary and (x[0] > 2.0 - dl.DOLFIN_EPS)
+
 
 class HyperelasticityVarf:
 
@@ -87,20 +93,30 @@ class HyperelasticityVarf:
         Pi = psi * dl.dx
         return Pi
 
+
 class CustomHyperelasticityProblem(hp.PDEVariationalProblem):
     def __init__(self, Vh, stretch_length):
-        bc = [dl.DirichletBC(Vh[STATE], dl.Constant((stretch_length, 0.0)), right_boundary), \
-              dl.DirichletBC(Vh[STATE], dl.Constant((0.0, 0.0)), left_boundary)]
-        bc0 = [dl.DirichletBC(Vh[STATE], dl.Constant((0.0, 0.0)), left_boundary), \
-               dl.DirichletBC(Vh[STATE], dl.Constant((0.0, 0.0)), right_boundary)]
+        bc = [
+            dl.DirichletBC(
+                Vh[STATE], dl.Constant((stretch_length, 0.0)), right_boundary
+            ),
+            dl.DirichletBC(Vh[STATE], dl.Constant((0.0, 0.0)), left_boundary),
+        ]
+        bc0 = [
+            dl.DirichletBC(Vh[STATE], dl.Constant((0.0, 0.0)), left_boundary),
+            dl.DirichletBC(Vh[STATE], dl.Constant((0.0, 0.0)), right_boundary),
+        ]
         hyperelasticity_varf_hander = HyperelasticityVarf()
-        super(CustomHyperelasticityProblem, self).__init__(Vh, hyperelasticity_varf_hander, bc, bc0,
-                                                           is_fwd_linear=False)
+        super(CustomHyperelasticityProblem, self).__init__(
+            Vh, hyperelasticity_varf_hander, bc, bc0, is_fwd_linear=False
+        )
         u_init_expr = dl.Expression(("0.5*L*x[0]", "0.0"), L=stretch_length, degree=5)
         u_init_func = dl.interpolate(u_init_expr, Vh[STATE])
         self.u_init = u_init_func.vector()
         self.iterations = 0
-        assert self.Vh[hp.STATE].mesh().mpi_comm().size == 1, print('Only worked out for serial codes')
+        assert self.Vh[hp.STATE].mesh().mpi_comm().size == 1, print(
+            "Only worked out for serial codes"
+        )
         #
         # u_trial, u_test = dl.TrialFunction(Vh[STATE]), dl.TestFunction(Vh[STATE])
         # MK = dl.PETScMatrix()
@@ -113,9 +129,11 @@ class CustomHyperelasticityProblem(hp.PDEVariationalProblem):
         m_out = self.generate_parameter()
         m_func_in = dl.Function(self.Vh[PARAMETER])
         m_func_in.vector().zero()
-        m_func_in.vector().axpy(1., m)
-        m_func_out = dl.project(self.varf_handler.parameter_map(m_func_in), self.Vh[PARAMETER])
-        m_out.axpy(1., m_func_out.vector())
+        m_func_in.vector().axpy(1.0, m)
+        m_func_out = dl.project(
+            self.varf_handler.parameter_map(m_func_in), self.Vh[PARAMETER]
+        )
+        m_out.axpy(1.0, m_func_out.vector())
         return m_out
 
     def solveFwd(self, state, x):
@@ -194,7 +212,7 @@ class CustomHyperelasticityProblem(hp.PDEVariationalProblem):
         # state.axpy(1., u.vector())
         # self.iterations += iteration
         x[hp.STATE].zero()
-        x[hp.STATE].axpy(1., self.u_init)
+        x[hp.STATE].axpy(1.0, self.u_init)
         u = hp.vector2Function(x[hp.STATE], self.Vh[hp.STATE])
         m = hp.vector2Function(x[hp.PARAMETER], self.Vh[hp.PARAMETER])
         p = dl.TestFunction(self.Vh[hp.ADJOINT])
@@ -205,41 +223,44 @@ class CustomHyperelasticityProblem(hp.PDEVariationalProblem):
         solver = dl.NonlinearVariationalSolver(problem)
 
         prm = solver.parameters
-        prm['nonlinear_solver'] = 'snes'
-        prm['snes_solver']['line_search'] = 'bt'
-        prm['snes_solver']['linear_solver'] = 'lu'
-        prm['snes_solver']['report'] = False
-        prm['snes_solver']['error_on_nonconvergence'] = True
-        prm['snes_solver']['absolute_tolerance'] = 1E-10
-        prm['snes_solver']['relative_tolerance'] = 1E-6
-        prm['snes_solver']['maximum_iterations'] = 1000
-        prm['newton_solver']['absolute_tolerance'] = 1E-10
-        prm['newton_solver']['relative_tolerance'] = 1E-6
-        prm['newton_solver']['maximum_iterations'] = 1000
-        prm['newton_solver']['relaxation_parameter'] = 1.0
-
+        prm["nonlinear_solver"] = "snes"
+        prm["snes_solver"]["line_search"] = "bt"
+        prm["snes_solver"]["linear_solver"] = "lu"
+        prm["snes_solver"]["report"] = False
+        prm["snes_solver"]["error_on_nonconvergence"] = True
+        prm["snes_solver"]["absolute_tolerance"] = 1e-10
+        prm["snes_solver"]["relative_tolerance"] = 1e-6
+        prm["snes_solver"]["maximum_iterations"] = 1000
+        prm["newton_solver"]["absolute_tolerance"] = 1e-10
+        prm["newton_solver"]["relative_tolerance"] = 1e-6
+        prm["newton_solver"]["maximum_iterations"] = 1000
+        prm["newton_solver"]["relaxation_parameter"] = 1.0
 
         # print(dl.info(solver.parameters, True))
         iterations, converged = solver.solve()
         self.iterations += iterations
         state.zero()
-        state.axpy(1., u.vector())
+        state.axpy(1.0, u.vector())
 
 
-def HyperelasticityPrior(Vh_PARAMETER, pointwise_std, correlation_length, mean=None, anis_diff=None):
+def HyperelasticityPrior(
+    Vh_PARAMETER, pointwise_std, correlation_length, mean=None, anis_diff=None
+):
     # Delta and gamma
     delta = 1.0 / (pointwise_std * correlation_length)
-    gamma = delta * correlation_length ** 2
+    gamma = delta * correlation_length**2
     if anis_diff is None:
         theta0 = 1
         theta1 = 1
-        alpha = math.pi / 4.
+        alpha = math.pi / 4.0
         anis_diff = dl.CompiledExpression(hp.ExpressionModule.AnisTensor2D(), degree=1)
         anis_diff.set(theta0, theta1, alpha)
     if mean is None:
         return hp.BiLaplacianPrior(Vh_PARAMETER, gamma, delta, anis_diff, robin_bc=True)
     else:
-        return hp.BiLaplacianPrior(Vh_PARAMETER, gamma, delta, anis_diff, mean=mean, robin_bc=True)
+        return hp.BiLaplacianPrior(
+            Vh_PARAMETER, gamma, delta, anis_diff, mean=mean, robin_bc=True
+        )
 
 
 def HyperelasticityMisfit(prior, pde, Vu, settings):
@@ -257,8 +278,10 @@ def HyperelasticityMisfit(prior, pde, Vu, settings):
     ny_targets = math.floor(math.sqrt(ntargets / aspect_ratio))
     nx_targets = math.floor(ntargets / ny_targets)
     if not ny_targets * nx_targets == ntargets:
-        raise Exception("The number of obaservation points cannot lead to a regular grid \
-        that is compatible with the aspect ratio.")
+        raise Exception(
+            "The number of obaservation points cannot lead to a regular grid \
+        that is compatible with the aspect ratio."
+        )
     targets_x = np.linspace(0.0, settings["aspect_ratio"], nx_targets + 2)
     targets_y = np.linspace(0.0, 1.0, ny_targets + 2)
     targets_xx, targets_yy = np.meshgrid(targets_x[1:-1], targets_y[1:-1])
@@ -272,7 +295,7 @@ def HyperelasticityMisfit(prior, pde, Vu, settings):
     print("Determining noise standard deviation choice based on 50 random samples")
     for i in range(50):
         utrue = pde.generate_state()
-        mtrue = true_parameter(prior) #random true parameter
+        mtrue = true_parameter(prior)  # random true parameter
         x = [utrue, mtrue, None]
         pde.solveFwd(x[hp.STATE], x)
         misfit.B.mult(x[hp.STATE], misfit.d)
@@ -292,10 +315,14 @@ def model(settings):
 
     ndim = 2
     nx = settings["nx"]
-    mesh = dl.RectangleMesh(dl.Point(0, 0), dl.Point(settings["aspect_ratio"], 1.0), \
-                            nx, math.floor(nx / settings["aspect_ratio"]))
-    Vh_STATE = dl.VectorFunctionSpace(mesh, 'Lagrange', 2)
-    Vh_PARAMETER = dl.FunctionSpace(mesh, 'Lagrange', 1)
+    mesh = dl.RectangleMesh(
+        dl.Point(0, 0),
+        dl.Point(settings["aspect_ratio"], 1.0),
+        nx,
+        math.floor(nx / settings["aspect_ratio"]),
+    )
+    Vh_STATE = dl.VectorFunctionSpace(mesh, "Lagrange", 2)
+    Vh_PARAMETER = dl.FunctionSpace(mesh, "Lagrange", 1)
     Vh = [Vh_STATE, Vh_PARAMETER, Vh_STATE]
 
     # right_traction_expr = dl.Expression(("a*exp(-1.0*pow(x[1] - 0.5,2)/b)", "c*(1.0 + (x[1]/d))"), a=0.08, b=4, c=0.04,
@@ -312,11 +339,17 @@ def model(settings):
     alpha = settings["alpha"]
     anis_diff = dl.CompiledExpression(hp.ExpressionModule.AnisTensor2D(), degree=5)
     anis_diff.set(theta0, theta1, alpha)
-    prior = HyperelasticityPrior(Vh[PARAMETER], settings["sigma"], settings["rho"], anis_diff=anis_diff)
+    prior = HyperelasticityPrior(
+        Vh[PARAMETER], settings["sigma"], settings["rho"], anis_diff=anis_diff
+    )
 
-    misfit, targets, noise_stdev = HyperelasticityMisfit(prior, pde, Vh[STATE], settings)
+    misfit, targets, noise_stdev = HyperelasticityMisfit(
+        prior, pde, Vh[STATE], settings
+    )
     if settings["plot"]:
-        obs_values = np.linalg.norm(misfit.d.get_local().reshape(settings["ntargets"], 2), axis=1)
+        obs_values = np.linalg.norm(
+            misfit.d.get_local().reshape(settings["ntargets"], 2), axis=1
+        )
         cbar = plt.scatter(targets[:, 0], targets[:, 1], c=obs_values, marker=",", s=10)
         plt.colorbar(cbar)
         plt.xticks([])
@@ -324,7 +357,7 @@ def model(settings):
         plt.xlim([0, settings["aspect_ratio"]])
         plt.ylim([0, 1])
         # plt.gca().set_aspect(1./settings["aspect_ratio"])
-        plt.gca().set_aspect('equal')
+        plt.gca().set_aspect("equal")
         plt.savefig(output_path + "obs_sample.pdf", bbox_inches="tight")
         plt.close()
         cbar = dl.plot(hp.vector2Function(mtrue, Vh[PARAMETER]))
@@ -344,6 +377,7 @@ def model(settings):
         plt.close()
         np.save(output_path + "targets.npy", targets)
     return pde, prior, misfit, mtrue, noise_stdev
+
 
 def true_parameter(prior):
     noise = dl.Vector()

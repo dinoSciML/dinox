@@ -1,9 +1,8 @@
-#THIS and all data generation/model problem codes should go in a common "problems" subrepo of DinoSciML i think. and people can refactor their codes
-#once we come to a consensus of the easiest format for problems.
+# THIS and all data generation/model problem codes should go in a common "problems" subrepo of DinoSciML i think. and people can refactor their codes
+# once we come to a consensus of the easiest format for problems.
 import os
 import sys
 import time
-
 
 import dolfin as dl
 import matplotlib.pyplot as plt
@@ -13,15 +12,19 @@ sys.path.append(os.environ.get("HIPPYLIB_PATH"))
 import hippylib as hp
 
 sys.path.append(os.environ.get("HIPPYFLOW_PATH"))
-import hippyflow as hf
-
 ################################################################################
 import argparse
+
+import hippyflow as hf
 
 parser = argparse.ArgumentParser()
 
 parser.add_argument(
-    "-save_base_folder", "--save_base_folder", type=str, default="/storage/joshua/", help="Folder to save everything in"
+    "-save_base_folder",
+    "--save_base_folder",
+    type=str,
+    default="/storage/joshua/",
+    help="Folder to save everything in",
 )
 
 parser.add_argument(
@@ -38,10 +41,18 @@ parser.add_argument(
     help="Active subspace oversample",
 )
 parser.add_argument(
-    "-problem_name", "--problem_name", type=str, default="nonlinear_diffusion_reaction", help="Problem name"
+    "-problem_name",
+    "--problem_name",
+    type=str,
+    default="nonlinear_diffusion_reaction",
+    help="Problem name",
 )
 parser.add_argument(
-    "-ndata", "--ndata", type=int, default=1000, help="Number of samples to use for active subspace (if -base_type ==as)"
+    "-ndata",
+    "--ndata",
+    type=int,
+    default=1000,
+    help="Number of samples to use for active subspace (if -base_type ==as)",
 )
 
 args = parser.parse_args()
@@ -55,20 +66,23 @@ oversample = args.oversample
 ################################################################################
 # Set up the model
 import importlib
+
 base_folder = args.save_base_folder
 problem_name = args.problem_name
-PDEproblem_dir = problem_name+"/"
-model_module = importlib.import_module(problem_name+".model")
-settings = model_module.settings() #only uses the prior settings
-_, prior, misfit, _, _ = model_module.model(settings) #only uses the prior settings
+PDEproblem_dir = problem_name + "/"
+model_module = importlib.import_module(problem_name + ".model")
+settings = model_module.settings()  # only uses the prior settings
+_, prior, misfit, _, _ = model_module.model(settings)  # only uses the prior settings
 
 assert dl.MPI.comm_world.size == 1, print("Not thought out in other cases yet")
 
-for i, BIPproblem_sub_dir in enumerate(os.listdir(f"{base_folder}{PDEproblem_dir}problem")):  #(high variance may revert to the prior, low variance may revert too easily to near-gaussian around MAP ppoint)
+for i, BIPproblem_sub_dir in enumerate(
+    os.listdir(f"{base_folder}{PDEproblem_dir}problem")
+):  # (high variance may revert to the prior, low variance may revert too easily to near-gaussian around MAP ppoint)
     print(f"Computing bases for {BIPproblem_sub_dir}")
-    BIPproblem_dir = f"{base_folder}{PDEproblem_dir}problem/"+BIPproblem_sub_dir+"/"
-    data_dir = BIPproblem_dir+"samples/"
-    encoder_save_dir = BIPproblem_dir+"encoder/"
+    BIPproblem_dir = f"{base_folder}{PDEproblem_dir}problem/" + BIPproblem_sub_dir + "/"
+    data_dir = BIPproblem_dir + "samples/"
+    encoder_save_dir = BIPproblem_dir + "encoder/"
     os.makedirs(encoder_save_dir, exist_ok=True)
     if args.basis_type.lower() == "as":
         ################################################################################
@@ -76,7 +90,7 @@ for i, BIPproblem_sub_dir in enumerate(os.listdir(f"{base_folder}{PDEproblem_dir
 
         all_data = np.load(data_dir + "mq_data.npz")
         JTPhi_data = np.load(data_dir + "JstarPhi_data.npz")
-        noise_stdev = np.load(BIPproblem_dir+"likelihood/noise_stdev.npy")
+        noise_stdev = np.load(BIPproblem_dir + "likelihood/noise_stdev.npy")
         m_data = all_data["m_data"][: args.ndata]
         q_data = all_data["q_data"][: args.ndata]
         PhiTJ_data = np.transpose(JTPhi_data["JstarPhi_data"], (0, 2, 1))[: args.ndata]
@@ -125,7 +139,7 @@ for i, BIPproblem_sub_dir in enumerate(os.listdir(f"{base_folder}{PDEproblem_dir
             assert orth_error < 1e-5
         print(encoder_basis.shape, encoder_cobasis.shape)
         np.save(encoder_save_dir + "AS_encoder_basis", encoder_basis)
-        d_GN = d_GN/(noise_stdev**2.)
+        d_GN = d_GN / (noise_stdev**2.0)
         np.save(encoder_save_dir + "AS_d_GN", d_GN)
         np.save(encoder_save_dir + "AS_encoder_cobasis", encoder_cobasis)
 
@@ -133,7 +147,9 @@ for i, BIPproblem_sub_dir in enumerate(os.listdir(f"{base_folder}{PDEproblem_dir
         ax.semilogy(np.arange(len(d_GN)), d_GN)
         print()
 
-        ax.set(xlabel="index", ylabel="eigenvalue", title="GEVP JJT/sigma^2 spectrum") #TODO offline plot these! someone else do this..
+        ax.set(
+            xlabel="index", ylabel="eigenvalue", title="GEVP JJT/sigma^2 spectrum"
+        )  # TODO offline plot these! someone else do this..
         ax.grid()
 
         fig.savefig("JJTsigma^-2_eigenvalues.pdf")
@@ -159,7 +175,6 @@ for i, BIPproblem_sub_dir in enumerate(os.listdir(f"{base_folder}{PDEproblem_dir
         np.save(encoder_save_dir + "KLE_basis", encoder_basis)
         np.save(encoder_save_dir + "KLE_d", d_KLE)
         np.save(encoder_save_dir + "KLE_cobasis", encoder_cobasis)
-
 
     else:
         raise
