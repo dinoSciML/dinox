@@ -35,13 +35,20 @@ def settings(settings={}):
 
     # Likelihood specsls
     settings["ntargets"] = 25
-    settings["rel_noises"] = [0.002, 0.005, 0.01, 0.02, 0.05] #used by generate_data.py
+    settings["rel_noises"] = [
+        0.002,
+        0.005,
+        0.01,
+        0.02,
+        0.05,
+    ]  # used by generate_data.py
     settings["dQ"] = settings["ntargets"]
-    
-    np.random.seed(settings["seed"])
-    targets = np.random.uniform(0.1, 0.9, [settings["ntargets"], 2]) #define the targets once, based on the seed
-    settings["targets"] = targets
 
+    np.random.seed(settings["seed"])
+    targets = np.random.uniform(
+        0.1, 0.9, [settings["ntargets"], 2]
+    )  # define the targets once, based on the seed
+    settings["targets"] = targets
 
     # Printing and saving
     settings["verbose"] = False

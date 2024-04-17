@@ -15,47 +15,70 @@
 # Authors: Joshua Chen and Tom O'Leary-Roseberry
 # Contact: joshuawchen@icloud.com | tom.olearyroseberry@utexas.edu
 
+from os import makedirs
 from typing import Dict, Tuple
 
 import jax
+
+# TODO: python dinox.embed_data --cli_args which uses the CLI arguments from reduce_data.py (deprecated -- to be removed)
 import jax.numpy as jnp
-from kvikio.numpy import LikeWrapper  # kvikio is optional dependency?
 from opt_einsum import contract  # opt_einsum is a dependency
 
 from .data_utilities import __load_shaped_jax_array_direct_to_gpu, makedirs
 
 
-# TODO: python dinox.embed_data --cli_args which uses the CLI arguments from reduce_data.py (deprecated -- to be removed)
 def embed_data_in_encoder_decoder_subspaces(
     input_output_data: Tuple[jax.Array], encoder_decoder_config_dict: Dict
 ) -> Tuple[jax.Array]:
-    # Disk IO side effects, stdout (printing) side effects exist
-    # returns reduced X, fX, and possibly dfXdX: (if X, fX, dfXdX = input_output_data)
+    """
+    Processes the given input data using encoder and decoder subspaces defined in
+    the configuration, reducing the data dimensionality, and optionally
+    saves the results to disk.
 
-    # start_time = time.time()
-    ################################################################################
-    # Grab variables from config												   #
-    ################################################################################
+    Parameters
+    ----------
+    input_output_data : Tuple[jax.Array]
+        A tuple containing input data arrays X, fX, and optionally dfXdX (Jacobian matrix).
+        The tuple can have two elements (X, fX) or three elements (X, fX, dfXdX).
+    encoder_decoder_config_dict : Dict
+        A dictionary containing configuration settings for the encoder/decoder,
+        including file paths and directory settings for loading the basis matrices
+        and saving the reduced data.
+
+    Returns
+    -------
+    Tuple[jax.Array]
+        A tuple of reduced data arrays: reduced X, reduced fX, and possibly reduced dfXdX.
+        The tuple's contents depend on the input data provided.
+
+    Side Effects
+    ------------
+    - Reads encoder and decoder basis matrices from disk.
+    - Saves reduced data arrays to disk if specified in the configuration.
+    - Prints status messages to stdout reflecting the progress and completion of data saving.
+
+    Notes
+    -----
+    The function leverages tensor contraction operations to project input data onto the
+    encoder and decoder subspaces, leading to data dimensionality reduction.
+    The Jacobian data, if provided, is also projected using a specified encoder cobasis.
+    """
     save_dir = encoder_decoder_config_dict.get("save_dir")
-    encoder_decoder_dir = encoder_decoder_config_dict["encoder_decoder_dir"]
-    encoder_basis_filename = encoder_decoder_config_dict["encoder_basis_filename"]
-    encoder_cobasis_filename = encoder_decoder_config_dict["encoder_cobasis_filename"]
-    decoder_filename = encoder_decoder_config_dict.get("decoder_filename")
+    encoder_basis_path = encoder_decoder_config_dict["encoder_basis_path"]
+    encoder_cobasis_path = encoder_decoder_config_dict["encoder_cobasis_path"]
+    decoder_cobasis_path = encoder_decoder_config_dict.get("decoder_cobasis_path")
     reduced_zip_filename = "mq_data_reduced.npz"
 
-    ################################################################################
-    # Reduce the input data and save to file									   #
-    ################################################################################
     if len(input_output_data) == 3:
         X, fX, dfXdX = input_output_data
     else:
         X, fX = input_output_data
         dfXdX = None
+
     reduced_X = contract(
         "nx,xr->nr",
         X,
-        __load_shaped_jax_array_direct_to_gpu(
-            encoder_decoder_dir + encoder_cobasis_filename, (X.shape[1], -1)
+        __load_shaped_jax_array_direct_to_gpu(encoder_cobasis_path, (X.shape[1], -1)
         ),
         backend="jax",
     )
@@ -64,33 +87,32 @@ def embed_data_in_encoder_decoder_subspaces(
         contract(
             "nf,fr->nr",
             fX,
-            __load_shaped_jax_array_direct_to_gpu(
-                encoder_decoder_dir + decoder_filename, (fX.shape[1], -1)
+            __load_shaped_jax_array_direct_to_gpu(decoder_cobasis_path, (fX.shape[1], -1)
             ),
             backend="jax",
         )
-        if decoder_filename
+        if decoder_cobasis_path
         else fX
     )
+
     if save_dir:
         makedirs(save_dir, exist_ok=True)
-        jnp.save(save_dir + "X_reduced.npy", reduced_X)
-        jnp.save(save_dir + "fX_reduced.npy", reduced_fX)
+        jnp.save(save_dir + "/X_reduced.npy", reduced_X)
+        jnp.save(save_dir + "/fX_reduced.npy", reduced_fX)
         print("Saved embedded training data files to disk.")
+
     if dfXdX is not None:
-        #  Load the and project the Jacobian data with the encoder cobasis
         reduced_dfXdX = contract(
             "nxu,xr->nur",
             dfXdX,
-            __load_shaped_jax_array_direct_to_gpu(
-                encoder_decoder_dir + encoder_basis_filename, (X.shape[1], -1)
+            __load_shaped_jax_array_direct_to_gpu(encoder_basis_path, (X.shape[1], -1)
             ),
             backend="jax",
         )
         if save_dir:
-            jnp.save(save_dir + "dfXdX_reduced.npy", reduced_dfXdX)
+            jnp.save(save_dir + "/dfXdX_reduced.npy", reduced_dfXdX)
             jnp.savez(
-                save_dir + reduced_zip_filename,
+                save_dir + "/" + reduced_zip_filename,
                 X_data=reduced_X,
                 fX_data=reduced_fX,
                 dfXdX_data=reduced_dfXdX,
@@ -101,15 +123,37 @@ def embed_data_in_encoder_decoder_subspaces(
     else:
         if save_dir:
             jnp.savez(
-                save_dir + reduced_zip_filename, X_data=reduced_X, dfXdX_data=reduced_fX
+                save_dir + "/" + reduced_zip_filename,
+                X_data=reduced_X,
+                dfXdX_data=reduced_fX,
             )
             print("Saved zipped embedded training data file to disk.")
         print("Successfully reduced the data.")
         return reduced_X, reduced_fX
 
 
-def main():
-    # TODO: argparse move reduce_data.py CLI to here
+import sys
+
+
+def main() -> int:
+    """
+    Main entry point for the script. Intended to handle command-line arguments and
+    initiate the process of reducing data as specified in reduce_data.py.
+
+    Returns
+    -------
+    int
+        Exit status code. A return of 0 typically indicates success, any non-zero value
+        indicates an error or abnormal completion.
+
+    Notes
+    -----
+    This function is expected to integrate argparse for command-line interface handling,
+    which is yet to be implemented. Once implemented, it will parse the command-line
+    arguments to configure and control the data reduction process.
+
+    TODO: Implement argparse to move reduce_data.py CLI functionality to here.
+    """
     return 0
 
 
