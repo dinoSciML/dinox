@@ -17,10 +17,8 @@ logging.getLogger("UFL").setLevel(logging.WARNING)
 dl.set_log_active(False)
 import matplotlib.pyplot as plt
 
-# STATE, PARAMETER, ADJOINT = 0, 1, 2
 
-
-def nonlinear_diffusion_reaction_settings(settings={}):
+def settings(settings={}):
     settings["seed"] = 0  # Random seed
     settings["nx"] = 40  # Number of cells in each direction
 
@@ -33,17 +31,30 @@ def nonlinear_diffusion_reaction_settings(settings={}):
     settings["theta1"] = 1.0
     settings["alpha"] = 0.25 * math.pi
 
-    # Likelihood specs
+    # Likelihood specsls
     settings["ntargets"] = 25
-    settings["rel_noise"] = 0.02
+    settings["rel_noises"] = [
+        0.002,
+        0.005,
+        0.01,
+        0.02,
+        0.05,
+    ]  # used by generate_data.py
+    settings["dQ"] = settings["ntargets"]
+
+    np.random.seed(settings["seed"])
+    targets = np.random.uniform(
+        0.1, 0.9, [settings["ntargets"], 2]
+    )  # define the targets once, based on the seed
+    settings["targets"] = targets
 
     # Printing and saving
     settings["verbose"] = False
-    settings["output_path"] = "./result/"
+    settings["output_path"] = "./figures/"
 
     # MCMC settings
     settings["k"] = 200
-    settings["plot"] = False
+    settings["plot"] = True
 
     return settings
 
@@ -60,15 +71,14 @@ def pde_varf(u, m, p):
     )
 
 
-def nonlinear_diffusion_reaction_model(settings):
-
-    np.random.seed(settings["seed"])
+def model(settings):
 
     output_path = settings["output_path"]
-    if not os.path.exists(output_path):
+
+    if output_path is not None and not os.path.exists(output_path):
         os.makedirs(output_path, exist_ok=True)
 
-    ndim = 2
+    # ndim = 2
     nx = settings["nx"]
     mesh = dl.UnitSquareMesh(nx, nx)
     Vh2 = dl.FunctionSpace(mesh, "Lagrange", 2)
@@ -105,8 +115,7 @@ def nonlinear_diffusion_reaction_model(settings):
         Vh[hp.PARAMETER], gamma, delta, anis_diff, robin_bc=True
     )
 
-    ntargets = settings["ntargets"]
-    rel_noise = settings["rel_noise"]
+    rel_noise = settings.get("rel_noise")
 
     # Targets only on the bottom
     # Use this for uniformly distributed observation.
@@ -118,22 +127,33 @@ def nonlinear_diffusion_reaction_model(settings):
     # targets[:, 0] = targets_xx.flatten()
     # targets[:, 1] = targets_yy.flatten()
 
-    # targets everywhere
-    targets = np.random.uniform(0.1, 0.9, [ntargets, ndim])
+    # targets everywhere #specified outside once
+    targets = settings["targets"]
+
     if settings["verbose"]:
-        print("Number of observation points: {0}".format(ntargets))
+        print("Number of observation points: {0}".format(settings["ntargets"]))
     misfit = hp.PointwiseStateObservation(Vh[hp.STATE], targets)
 
     utrue = pde.generate_state()
-    mtrue = true_parameter(prior, random=False)
-    x = [utrue, mtrue, None]
-    pde.solveFwd(x[hp.STATE], x)
-    misfit.B.mult(x[hp.STATE], misfit.d)
-    MAX = misfit.d.norm("linf")
-    noise_std_dev = rel_noise * MAX
-    hp.parRandom.normal_perturb(noise_std_dev, misfit.d)
-    misfit.noise_variance = noise_std_dev * noise_std_dev
-    if settings["plot"]:
+    # pick a noise stdev based on the rel_noise * the max Linf norm over N samples
+
+    if rel_noise is not None:
+        noise_std_dev = 0.0
+        print("Determining noise standard deviation choice based on 50 random samples")
+        for i in range(50):
+            mtrue = true_parameter(prior, random=True)
+            x = [utrue, mtrue, None]
+            pde.solveFwd(x[hp.STATE], x)
+            misfit.B.mult(x[hp.STATE], misfit.d)
+            MAX = misfit.d.norm("linf")
+            noise_std_dev = max(rel_noise * MAX, noise_std_dev)
+        hp.parRandom.normal_perturb(noise_std_dev, misfit.d)
+        misfit.noise_variance = noise_std_dev * noise_std_dev
+        print("noise_std_dev =", noise_std_dev)
+    else:
+        noise_std_dev = None
+        mtrue = None
+    if settings["plot"] and output_path is not None:
         cbar = plt.scatter(
             targets[:, 0], targets[:, 1], c=misfit.d.get_local(), marker=",", s=10
         )
@@ -147,7 +167,7 @@ def nonlinear_diffusion_reaction_model(settings):
         plt.close()
         np.save(output_path + "targets.npy", targets)
 
-    return pde, prior, misfit, mtrue
+    return pde, prior, misfit, mtrue, noise_std_dev
 
 
 # def true_parameter(prior):

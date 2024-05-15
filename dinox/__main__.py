@@ -15,311 +15,239 @@
 # Authors: Joshua Chen and Tom O'Leary-Roseberry
 # Contact: joshuawchen@icloud.com | tom.olearyroseberry@utexas.edu
 
-import os
 ###################################################################
 # To run from CLI: python -m dinox --<cli_args_name> <cli_arg>
 ###################################################################
+
 import sys
 from argparse import ArgumentParser, BooleanOptionalAction
+from numpy import load
+from pathlib import Path
+from typing import Any, Dict
+import jax
 
-from .train import sub_dict, train_dino_in_embedding_space
+from ._data_utilities import save_to_pickle, sub_dict
+from .train import train_nn_in_embedding_space, save_training_results
 
+jax.config.update("jax_enable_x64", True)
 
-def main() -> int:
-    """"""
-    ################################################################################
-    # Define CLI arguments
-    ################################################################################
-    cli = ArgumentParser(add_help=True)
+def define_cli_arguments(cli: ArgumentParser) -> None:
+    """
+    Defines and adds command-line arguments for configuring the neural network training process.
 
-    # Random seed parameter
-    cli.add_argument(
-        "-run_seed",
-        "--run_seed",
-        type=int,
-        default=777,
-        help="Seed for NN initialization/ data shuffling / initialization",
-    )
+    Parameters
+    ----------
+    cli : ArgumentParser
+        The command-line argument parser instance.
+    """
+    # Required CLI arguments
+    cli.add_argument("-problemDir", type=str, required=True, help="Directory where problem data is located.")
+    cli.add_argument("-nTrain", type=int, required=True, help="# samples to use as the training dataset.")
+    cli.add_argument("-nnSavePrefix", type=str, required=True, help="Filename Prefix for saving the trained neural network.")
 
-    # Neural Network Architecture parameters
-    cli.add_argument(
-        "-architecture",
-        dest="architecture",
-        required=False,
-        default="generic_dense",
-        help="architecture type: as_dense or generic_dense",
-        type=str,
-    )
-    cli.add_argument(
-        "-activation",
-        dest="activation",
-        required=False,
-        default="gelu",
-        help="activation type: e.g. 'gelu', 'relu'",
-        type=str,
-    )
-    cli.add_argument(
-        "-depth",
-        dest="depth",
-        required=False,
-        default=8,  # 8 #6
-        help="NN # of layers (depth): e.g. 8",
-        type=int,
-    )
-    # cli.add_argument("-decoder", dest='decoder',required=False, default = 'jjt',  help="output basis: pod or jjt",type=str)
-    cli.add_argument(
-        "-fixed_input_rank",
-        dest="fixed_input_rank",
-        required=False,
-        default=200,
-        help="rank for input of AS network",
-        type=int,
-    )
-    cli.add_argument(
-        "-fixed_output_rank",
-        dest="fixed_output_rank",
-        required=False,
-        default=50,
-        help="rank for output of AS network",
-        type=int,
-    )
-    cli.add_argument(
-        "-truncation_dimension",
-        dest="truncation_dimension",
-        required=False,
-        default=200,
-        help="truncation dimension for low rank networks",
-        type=int,
-    )
+    # Neural Network architecture parameters
+    cli.add_argument("-architecture", type=str, default="genericDense",  choices=['genericDense','rnn'], help="Type of NN architecture.")
+    cli.add_argument("-activation", type=str, default="gelu", help="NN Activation function.")
+    cli.add_argument("-depth", type=int, default=8, help="Number of layers in the NN.")
 
-    # Neural Network Serialization parameters
-    cli.add_argument(
-        "-network_name",
-        dest="network_name",
-        required=True,
-        help="out name for the saved weights",
-        type=str,
-    )
-
-    # Data (Directory Location/Training) parameters
-    cli.add_argument(
-        "-data_dir",
-        dest="data_dir",
-        required=True,
-        help="Directory where training data lies",
-        type=str,
-    )
-    cli.add_argument(
-        "-train_data_size",
-        dest="train_data_size",
-        required=False,
-        default=2000,
-        help="training data size",
-        type=int,
-    )
-    cli.add_argument(
-        "-test_data_size",
-        dest="test_data_size",
-        required=False,
-        default=3000,
-        help="testing data size",
-        type=int,
-    )
+    # Data handling parameters
+    cli.add_argument("-nTest", type=int, default=5000, help="# samples to use as the testing dataset.")
 
     # Optimization parameters
-    cli.add_argument(
-        "-optax_optimizer",
-        dest="optax_optimizer",
-        required=False,
-        default="adam",
-        help="Name of the optax optimizer to use",
-        type=str,
-    )
-    cli.add_argument(
-        "-n_epochs",
-        dest="n_epochs",
-        required=False,
-        default=10000,
-        help="number of epochs for training",
-        type=int,
-    )
-    cli.add_argument(
-        "-batch_size", dest="batch_size", type=int, default=100, help="batch size"
-    )
-    cli.add_argument(
-        "-step_size",
-        "--step_size",
-        type=float,
-        default=1e-4,
-        help="What step size or 'learning rate'?",
-    )
-
-    # Loss function parameters
-    cli.add_argument(
-        "-l2_weight",
-        dest="l2_weight",
-        required=False,
-        default=1.0,
-        help="weight for l2 term",
-        type=float,
-    )
-    cli.add_argument(
-        "-h1_weight",
-        dest="h1_weight",
-        required=False,
-        default=1.0,
-        help="weight for h1 term",
-        type=float,
-    )
+    cli.add_argument("-loss", type=str, default='h1', choices=['h1','l2'], help="H1 or L2 loss?")
+    cli.add_argument("-batchSize", type=int, default=10, help="# samples per batch during training.") #25
+    cli.add_argument("-optaxOptimizer", type=str, default="adam", help="Optax optimizer to trian with")
+    cli.add_argument("-nEpochs", type=int, default=1500, help="# epochs for training.") #1000
+    cli.add_argument("-stepSize", type=float, default=1e-3, help="Learning rate for optax optimizer.") #3e-4 for L2 training
 
     # Encoder/Decoder parameters
-    cli.add_argument(
-        "-rb_dir",
-        "--rb_dir",
-        type=str,
-        default="",
-        help="Where are the reduced bases",
-    )
-    cli.add_argument(
-        "-encoder_basis",
-        "--encoder_basis",
-        required=False,
-        type=str,
-        default="as",
-        help="What type of input basis? Choose from [kle, as] ",
-    )
-    cli.add_argument(
-        "-decoder_basis",
-        "--decoder_basis",
-        type=str,
-        default="pod",
-        help="What type of input basis? Choose from [pod] ",
-    )
-    cli.add_argument(
-        "-save_embedded_data",
-        "--save_embedded_data",
-        help="Should we save the embedded training data to disk or just use it in training without saving to disk. WIthout this flag, defaults to false",
-        default=False,
-        action=BooleanOptionalAction,
-    )
-    # cli.add_argument('-J_data', '--J_data', type=int, default=1, help="Is there J data??? ")
-    ################################################################################
-    # Parse arguments and place them in a heirarchical config dictionary 	       #
-    ################################################################################
-    cli_args = vars(cli.parse_args())
+    cli.add_argument("-encoder", type=str, default="as",choices=['as','kle', ''], help="Type of encoder used.")
+    cli.add_argument("-decoder", type=str, default="", choices=['pod', 'jjt',''], help="Type of decoder used.")
+    cli.add_argument("-saveEmbeddedData", action="store_true", help="Flag to save embedded training data.")
+    cli.add_argument("-batchedEncoding", action="store_true", help="Whether to batch the Encoding operation for memory's sake.")
 
-    ###################################################################################
-    # Define the keys for each configuration dict (*_keys is a required naming
-    # convention here, since we define the configuration dict names by *
-    ##################################################################################
-    # right now this is only for dense.
-    nn_keys = ("architecture", "depth", "activation")  #'layer_width',
-    data_keys = (
-        "data_dir",
-        "train_data_size",
-        "test_data_size",
-    )  #'data_filenames'
-    training_keys = ("step_size", "batch_size", "optax_optimizer", "n_epochs")
-    network_serialization_keys = ("network_name",)
-    config_dict = {
+    # Other 
+    cli.add_argument("-runSeed", type=int, default=0, help="Seed for random # generation.")
+    8 
+
+def create_config_dict(cli_args: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
+    """
+    Constructs a configuration dictionary for neural network training from command-line
+    arguments, organizing the settings into categories such as network architecture,
+    data management, training parameters, and serialization settings.
+
+    Parameters
+    ----------
+    cli_args : Dict[str, Any]
+        Dictionary containing all command-line arguments.
+
+    Returns
+    -------
+    Dict[str, Dict[str, Any]]
+        A structured configuration dictionary with nested categories for different
+        aspects of the setup and training process.
+
+    Example
+    -------
+    >>> cli_args = {
+        'runSeed': 42,
+        'problemDir': '/path/to/data',
+        'nnSavePrefix': 'April17',
+        'architecture': 'generic_dense',
+        'activation': 'gelu',
+        'depth': 8,
+        'nTrain': 2000,
+        'nTest': 5000,
+        'batchSize': 25,
+        'optaxOptimizer': 'adam',
+        'nEpochs': 500,
+        'stepSize': 1e-3,
+        'loss': 'l2',
+        'encoder': 'as',
+        'decoder': 'pod',
+        'saveEmbeddedData': True,
+    }
+    >>> config = create_config_dict(cli_args)
+    >>> print(config['nn']['architecture'])
+    'generic_dense'
+    """
+    # Define the keys for each configuration dict (*_keys is a required naming convention,
+    # since we define the configuration dict names by removing this suffix
+    nn_keys = ("architecture", "depth", "activation") #layer_width defined later
+    data_keys = ("nTrain", "nTest")
+    training_keys = ("stepSize", "batchSize", "optaxOptimizer", "nEpochs", "loss")
+    results_keys = ("nnSavePrefix", )
+    encoder_decoder_keys = (
+        "encoder",
+        "decoder",
+        "saveEmbeddedData",
+        "batchedEncoding"
+    )
+    # This line has to be called in the same scope as the keys defined above
+    config = {
         k.removesuffix("_keys"): sub_dict(super_dict=cli_args, keys=v)
         for k, v in locals().items()
         if k.endswith("_keys")
     }
-    print(config_dict)
-    # ESS, max weight, 3rd order moment, k-fold cross validation
 
-    # problem_config_dict = {} #is this necessary
-    # config_dict['forward_problem'] = problem_config_dict
+    #Create full NN name (based on parameters)
+    nn_save_name = cli_args["nnSavePrefix"]
+    name_string_keys = ['architecture','depth','loss','runSeed','nEpochs','batchSize','nTrain']
+    for key in name_string_keys:
+        nn_save_name += f"_{key}{cli_args[key]}"
+    print("nn_save_name ",nn_save_name)
 
-    # TEMPORARY, modify additionally each configuraiton dict. THese really should be
-    # CLI commands of some sort, or part of the default associated with CLI params
-    # e.g. nn['generic_dense'] default.
+    # Additional configuration related to file paths and directories
+    problem_dir = cli_args["problemDir"]
 
-    # Neural Network Architecture parameters
-    # TODO: CHECK ON THIS, as a functio nof DIMENSION REDUCTION PARMETERS!
-    config_dict["nn"]["layer_width"] = 2 * 50  # args.rb_rank
-    # config_dict['nn']['layer_rank'] = 50 #nn_width = 2*args.rb_rank?
-    # config_dict['hidden_layer_dimensions'] = (config_dict['depth']-1)*[config_dict['truncation_dimension']]+[config_dict['fixed_output_rank']]
+    #Load/Save paths
+    config["data"]["dir"] = Path(problem_dir, "samples")
+    config["data"]["N"] = load(Path(config["data"]["dir"],"X_data.npy")).shape[0]
+    # config["encoder_decoder"]["dir"] = Path(problem_dir, "encoder"),
+    config["encoder_decoder"]["save_dir"] = Path(problem_dir, "samples") if cli_args["saveEmbeddedData"] else None
+    config["data"]["filenames"] = ("X_data.npy", "fX_data.npy", "dfXdX_data.npy") #User should be able to specify this...
 
-    # Encoder/Decoder parameters
-    config_dict["encoder_decoder"] = {}
-    config_dict["encoder_decoder"]["encode"] = True
-    config_dict["encoder_decoder"]["decode"] = False
-    config_dict["encoder_decoder"]["encoder"] = cli_args["encoder_basis"]
-    config_dict["encoder_decoder"][
-        "decoder"
-    ] = "pod"  # ignored for now, decode is False
-    encoder_decoder_dir = (
-        f"{cli_args['data_dir']}reduced_bases/"
-        if cli_args["rb_dir"] == ""
-        else cli_args["rb_dir"]
+    config["results"] = {}
+    config["results"]["nn_config"] = config["nn"]
+    config["results"]["nn_class_path"] = Path(problem_dir, "trained_nn", nn_save_name+".eqx_class")
+    config["results"]["nn_weights_path"] = Path(problem_dir, "trained_nn", nn_save_name+".eqx")
+    config["results"]["training_metrics_path"] = Path(problem_dir, "training_metrics", nn_save_name+".pkl")
+    config["config_path"] = Path(problem_dir, "config", nn_save_name+".pkl")
+
+    encodec_config = config["encoder_decoder"]
+    if encodec_config["encoder"]:
+        config["encoder_decoder"][
+            "encoder_basis_path"
+        ] = Path(problem_dir, "encoder", f"{encodec_config['encoder'].upper()}_encoder_basis.npy")
+        config["encoder_decoder"][
+            "encoder_cobasis_path"
+        ] = Path(problem_dir, "encoder", f"{encodec_config['encoder'].upper()}_encoder_cobasis.npy")
+    if encodec_config["decoder"]:
+        config["encoder_decoder"][
+            "decoder_basis_path"
+        ] = Path(problem_dir, "decoder", f"{encodec_config['decoder'].upper()}_decoder_basis.npy")
+        config["encoder_decoder"][
+            "decoder_cobasis_path"
+        ] = Path(problem_dir, "decoder", f"{encodec_config['decoder'].upper()}_decoder_cobasis.npy")
+        # Configure paths for encoder and decoder if used
+        
+        # if (
+        #     "full_state" in cli_args["problem_dir"]
+        #     and config["encoder_decoder"]["decode"]
+        # ):
+        #     decoder_cobasis_filename = f"{encodec_dict["decoder"].upper()}_cobasis.npy"
+        #     decoder_basis_filename = f"{encodec_dict["decoder"].upper()}_basis.npy"
+        # else:
+        #     decoder_cobasis_filename = None
+        #     decoder_basis_filename = None
+
+    # Neural Network Architecture parameters #what if no encoder/decoder provided
+    config["nn"]["layer_width"] = \
+        2 * load(encodec_config['encoder_basis_path']).shape[1]
+    
+    return config
+
+# TODO: add decorator for saving the returns of functions... rather than dealing with
+# TODO: switch from argparse to click, use @click.option()
+# TODO: use a logger for print statementes ('verbose=True') rather than printing
+def main() -> int:
+    """
+    Main function to setup and run the training of a neural network using DINO
+    (Derivative-Informed Neural Operator) architecture. It handles parsing command-line
+    arguments, setting up data and network configurations, initiating training, and
+    saving the results and model configurations.
+
+    Returns
+    -------
+    int
+        Exit status code: 0 indicates successful execution, other values indicate errors.
+
+    Notes
+    -----
+    This function defines and processes command-line arguments to configure various
+    aspects of neural network training, including architecture settings, data handling,
+    optimization parameters, and paths for saving outputs. It leverages external libraries
+    such as JAX, CuPy, and NumPy for efficient computation and data management. The function
+    ensures all configurations are logged and saved for reproducibility. It encapsulates
+    the workflow in a series of discrete steps that include:
+    
+    1. Parsing command-line arguments.
+    2. Configuring neural network and data settings.
+    3. Training the neural network.
+    4. Saving training results and network parameters to disk.
+
+    Examples
+    --------
+    Typical usage often involves invoking this script from the command line. An example
+    command would be:
+    python -m dinox -runSeed 42 -problemDir '/path/to/data' -nnSavePrefix 'Feb23' 
+    
+    Raises
+    ------
+    AssertionError
+        If any configurations or paths are incorrect, potentially during the checks for
+        data sizes, directory existence, or file operations.
+    """
+    cli = ArgumentParser(add_help=True)
+    define_cli_arguments(cli)
+    cli_args = vars(cli.parse_args())
+
+    # Create a heirarchical configuration dictionary from CLI arguments
+    config = create_config_dict(cli_args)
+
+    # Save configuration for reproducibility
+    save_to_pickle(config['config_path'], config)  
+
+    # Perform the training of the neural network
+    trained_approximator, results = train_nn_in_embedding_space(
+        random_seed=cli_args['runSeed'], embedded_training_config=config
     )
-    encoder_basis = config_dict["encoder_decoder"]["encoder"].upper()
-    decoder_basis = cli_args["decoder_basis"].upper()
-    assert encoder_basis in ("AS", "KLE")
-    if (
-        "full_state" in cli_args["data_dir"]
-        and config_dict["encoder_decoder"]["decode"]
-    ):
-        decoder_filename = f"{decoder_basis}_projector.npy"
-    else:
-        decoder_filename = None
-    # save_location means embedded_data_save_dir
-    config_dict["encoder_decoder"]["save_location"] = (
-        cli_args["data_dir"] if cli_args["save_embedded_data"] else None
-    )
-    config_dict["encoder_decoder"]["encoder_decoder_dir"] = encoder_decoder_dir
-    config_dict["encoder_decoder"][
-        "encoder_basis_filename"
-    ] = f"{encoder_basis}_encoder_basis.npy"
-    config_dict["encoder_decoder"][
-        "encoder_cobasis_filename"
-    ] = f"{encoder_basis}_encoder_cobasis.npy"
-    config_dict["encoder_decoder"]["decoder_filename"] = decoder_filename
-    # config_dict['encoder_decoder']['reduced_data_filenames'] = ('X_reduced.npy','Y_reduced.npy','J_reduced.npy') #these files may not exist
 
-    # Data (Directory Location/Training) parameters
-    if (
-        config_dict["encoder_decoder"]["encode"]
-        or config_dict["encoder_decoder"]["decode"]
-    ):
-        config_dict["data"]["data_filenames"] = (
-            "m_data.npy",
-            "q_data.npy",
-            "J_data.npy",
-        )
-    else:
-        config_dict["data"]["data_filenames"] = (
-            "m_data.npy",
-            "q_data.npy",
-            "J_data.npy",
-        )
-
-    # Optimization parameters
-    loss_weights = [cli_args["l2_weight"], cli_args["h1_weight"]]
-    for loss_weight in loss_weights:
-        assert loss_weight >= 0
-    config_dict["training"]["loss_weights"] = loss_weights
-
-    # config_dict['truncation_dimension'] = args.truncation_dimension
-
-    # Deserializing / Serializing Neural Network settings
-    config_dict["network_serialization"]["save_weights"] = True  # make a CLI
-    config_dict["network_serialization"]["trained_nn"] = "trained_nn/"# make a CLI  
-    config_dict['network_serialization']['nn_checkpoint_path'] = "trained_nn/"
-    config_dict['network_serialization']["nn"] = config_dict["nn"]
-    random_seed = cli_args["run_seed"]
-    if cli_args["l2_weight"] != 1.0:
-        config_dict["network_serialization"][
-            "network_name"
-        ] += f"l2_weight_{cli_args['l2_weight']}_seed_{random_seed}"
-
-    train_dino_in_embedding_space(
-        random_seed=random_seed, embedded_training_config_dict=config_dict
-    )
+    save_training_results(results=results, nn=trained_approximator, config=config['results'])
     return 0
-
+    # ESS, max weight,  k-fold cross validation (can do this for training lazymaps)
 
 if __name__ == "__main__":
     sys.exit(main())
+
+
