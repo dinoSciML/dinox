@@ -22,7 +22,6 @@ from typing import Any, Callable, Dict, List, Tuple
 import equinox as eqx
 import jax
 import jax.nn
-import jax.numpy as jnp
 import jax.random as jr
 
 # This file contains utilities for initializing equinox (build on jax) neural networks
@@ -42,7 +41,7 @@ def GenericDenseFactory(
     activation: str = "gelu"
 ) -> eqx.Module:
     """
-    Creates a multi-layer perceptron (MLP) with specified parameters using the Equinox library.
+    Convenience function to create a multi-layer perceptron (MLP) with specified parameters using the Equinox library.
 
     Parameters
     ----------
@@ -88,13 +87,13 @@ def GenericDenseFactory(
     )
 
 
-def instantiate_uninitialized_nn(
+def define_uninitialized_nn(
     *, nn_config: Dict[str, Any], key: jr.PRNGKey = jr.key(0)
 ) -> eqx.Module:
     """
-    Instantiates an uninitialized neural network based on the provided configuration
+    Convenience function. Defines an uninitialized neural network based on the provided configuration
     dictionary and a random key. Currently, only supports the initialization of a generic
-    dense network architecture.
+    dense network architecture. Should add more network architectures here.
 
     Parameters
     ----------
@@ -288,8 +287,8 @@ def instantiate_nn(
     depend on the presence and validity of a specified checkpoint path.
     """
     # Set up the neural network
-    eqx_nn_approximator = instantiate_uninitialized_nn(
-        nn_config=nn_config, key=key
+    eqx_nn_approximator = define_uninitialized_nn(
+        nn_config=nn_config, key=key #key is unused
     )
 
     # Random seed
@@ -307,6 +306,7 @@ def instantiate_nn(
         eqx_nn_approximator = eqx.tree_deserialise_leaves(
             jax_serialized_params_path, eqx_nn_approximator
         )
+        print("Successfully loaded equinox NN from disk")
     else:
         # Random initialization of equinox NN layers
         eqx_nn_approximator = __init_linear_layer_weights(
@@ -314,3 +314,4 @@ def instantiate_nn(
         )
 
     return eqx_nn_approximator, permute_key
+

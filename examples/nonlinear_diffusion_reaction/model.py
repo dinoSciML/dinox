@@ -17,8 +17,6 @@ logging.getLogger("UFL").setLevel(logging.WARNING)
 dl.set_log_active(False)
 import matplotlib.pyplot as plt
 
-# STATE, PARAMETER, ADJOINT = 0, 1, 2
-
 
 def settings(settings={}):
     settings["seed"] = 0  # Random seed

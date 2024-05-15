@@ -363,7 +363,7 @@ def load_pickle(file_path: Path) -> Any:
     return deserialized
 
 
-def load_1D_jax_array_direct_to_gpu(file_path: str) -> jax.Array:
+def load_1D_jax_array_direct_to_gpu(file_path: str, dtype=None) -> jax.Array:
     """
     Loads a binary file from disk directly into a 1D JAX array on the GPU.
 
@@ -396,12 +396,14 @@ def load_1D_jax_array_direct_to_gpu(file_path: str) -> jax.Array:
     >>> data_array = load_1D_jax_array_direct_to_gpu(file_path)
     >>> print(data_array.shape)
     """
-    return jnp.asarray(
-        np.fromfile(file_path, dtype=np.float64, offset=128),
-        like=LikeWrapper(np.empty(())),
-        dtype=np.float64,
-    )
-
+    if dtype is not None:
+        return jnp.asarray(
+            np.fromfile(file_path, dtype=dtype, like=LikeWrapper(np.empty(())), offset=128)
+        )
+    else:
+        return jnp.asarray(
+            np.fromfile(file_path, like=LikeWrapper(np.empty(())), offset=128)
+        )
 
 def __load_shaped_jax_array_direct_to_gpu(
     file_path: str, shape: Tuple[int, ...]
@@ -492,7 +494,7 @@ def load_data_disk_direct_to_gpu_no_jacobians(
     """
     data_dir = data_config_dict["dir"]
     N = data_config_dict["N"]
-    X_filename, fX_filename = data_config_dict["filenames"]
+    X_filename, fX_filename = data_config_dict["filenames"][0:2]
 
     # Load data directly to GPU, reshape as required
     X = __load_shaped_jax_array_direct_to_gpu(Path(data_dir, X_filename), (N, -1))
@@ -679,13 +681,19 @@ def split_training_testing_data_flat(
     n_test = data_config_dict["nTest"]
     n_train = data_config_dict["nTrain"]
     n_train_test = n_train + n_test
-
     if calculate_norms:
         print("Computing data norms for relative error calculations")
         Y_dYdX = jnp.concatenate([data[1], vmap(lambda x: x.ravel())(data[2])], axis=1)
-        data = [data[0], Y_dYdX] + [
+        if data_config_dict['jacobian']: #(X, Y, dYdX) -> (X, Y_dYdX) + norms
+            data = [data[0], Y_dYdX] + [
             vmap(jit(lambda x: jnp.linalg.norm(x) ** 2))(array) for array in data[1:]
         ]
+        else: # (X, Y, Y_dYdX) + norms
+            data = [data[0], data[1], Y_dYdX] + [
+            vmap(jit(lambda x: jnp.linalg.norm(x) ** 2))(array) for array in data[1:]
+        ]
+        for datum in data:
+            print ("shapes", datum.shape)
 
     n_data, dM = data[0].shape
     print(f"Total data: {n_data}, Training data: {n_train}, Testing data: {n_test}")

@@ -315,7 +315,6 @@ def HyperelasticityMisfit(prior, pde, Vu, settings):
         print("noise_std_dev =", noise_std_dev)
     else:
         noise_std_dev = None
-
     return misfit, targets, noise_std_dev
 
 

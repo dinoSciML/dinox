@@ -24,21 +24,23 @@ import jax.numpy as jnp
 import jax.random as jr
 import optax
 
-from .data_utilities import (
+from ._data_utilities import (
     create_arrays_permuter,
     load_data_disk_direct_to_gpu,
+    load_data_disk_direct_to_gpu_no_jacobians,
     makedirs,
     save_to_pickle,
     slice_flat_data,
     split_training_testing_data_flat,
 )
 from .embed_data import embed_data_in_encoder_decoder_subspaces
-from .metrics import (
-    compute_flattened_h1_loss_metrics,
-    compute_l2_loss_metrics,
-    grad_mean_h1_norm_loss_flattened,
+from .losses import (
+    mean_flattened_h1_losses,
+    mean_l2_losses,
+    grad_mean_flattened_h1_norm_loss,
     grad_mean_l2_norm_loss,
 )
+
 from .nn_factories import instantiate_nn
 
 # TODO: f = create_encoder_decoder_nn_from_embedded_dino(nn_approximator, basis, cobasis)
@@ -52,7 +54,7 @@ def __check_batch_size_divisibility(data_iterable, *, batch_size):
                 "Adjust `batch_size` to evenly divide training and testing data."
             )
 
-def define_loss_and_optimization_stepper(
+def define_optimization_stepper(
     *,
     loss: Literal["l2", "h1"],
     nn: eqx.Module,
@@ -90,9 +92,8 @@ def define_loss_and_optimization_stepper(
         If the specified optimizer name is not found in the Optax module.
     """
     gradient = (
-        grad_mean_l2_norm_loss if loss == "l2" else grad_mean_h1_norm_loss_flattened
+        grad_mean_l2_norm_loss if loss == "l2" else grad_mean_flattened_h1_norm_loss
     )
-    loss_metric = compute_l2_loss_metrics if loss == "l2" else compute_flattened_h1_loss_metrics
     optimizer = optax.__getattribute__(optax_optimizer_name)(
         learning_rate=learning_rate
     )
@@ -124,8 +125,9 @@ def define_loss_and_optimization_stepper(
             new_flat_optimizer_state = jax.tree_util.tree_leaves(new_optimizer_state)
             return new_flat_optimizer_state, new_flat_nn
 
-        return take_tree_flattened_step, flat_optimizer_state, flat_nn, loss_metric
+        return take_tree_flattened_step, flat_optimizer_state, flat_nn
     else:
+        print("using not flat take step")
         @eqx.filter_jit
         def take_step(
             optimizer_state: Any, nn: eqx.Module, X: jax.Array, Y_dYdX: jax.Array
@@ -136,7 +138,7 @@ def define_loss_and_optimization_stepper(
             new_nn = eqx.apply_updates(nn, updates)
             return new_optimizer_state, new_nn
 
-        return take_step, optimizer_state, nn, loss_metric
+        return take_step, optimizer_state, nn
 
 
 def training_loop(
@@ -153,6 +155,9 @@ def training_loop(
     ],
     n_epochs: int,
     data: Tuple[jnp.ndarray, jnp.ndarray],
+    testing_data,
+    dY,
+    tree_def_nn
 ) -> Any:
     """
     Executes a generic training loop for a given neural network model using
@@ -164,8 +169,6 @@ def training_loop(
         A function to update the optimizer state and model based on the batch data.
     slicer : Callable
         A function to slice the data into batches.
-    nn : Any
-        The neural network model to train.
     optimizer_state : Any
         The current state of the optimizer.
     batch_size : int
@@ -194,15 +197,21 @@ def training_loop(
             f"n_batches={n_batches}. Adjust `batch_size` to evenly divide {len(data[0])}."
         )
         raise ValueError(error_msg)
-
-    for _ in jnp.arange(1, n_epochs + 1):
+    testing_data = [data[0:2500] for data in testing_data]
+    for i in jnp.arange(1, n_epochs + 1):
         X, Y_dYdX = array_permuter(*data)
 
         end_idx = 0
-        for _ in range(n_batches):
+        for j in range(n_batches):
             end_idx, X_batch, Y_dYdX_batch = slicer(X, Y_dYdX, batch_size, end_idx)
             optimizer_state, nn = stepper(optimizer_state, nn, X_batch, Y_dYdX_batch)
 
+        if (i % 100) == 0:
+            nn_unflat = jax.tree_util.tree_unflatten(tree_def_nn, nn)
+            test_loss = mean_flattened_h1_losses(nn_unflat, dY, *testing_data)
+            # test_loss = mean_flattened_h1_losses(nn_unflat, dY, *training_data_batch)s
+            print(i, "test_accuracy_l2", test_loss[0])
+            print(i, "test_accuracy_h1", test_loss[1], "\n")
     return nn
 
 
@@ -251,8 +260,7 @@ def train_nn_approximator(
 
     n_train, dM = training_data[0].shape
     n_test = testing_data[0].shape[0]
-    dY = int(training_data[1].shape[1] / (dM + 1))  # for flat data
-    
+
     # Creating array permuter used for shuffling data after each epoch
     __check_batch_size_divisibility(
         (training_data, testing_data), batch_size=batch_size
@@ -264,25 +272,34 @@ def train_nn_approximator(
     num_train_steps = n_epochs * n_train_batches
     lr_schedule = optax.piecewise_constant_schedule(
         init_value=training_config["stepSize"],
-        boundaries_and_scales={int(num_train_steps * 0.8): 0.1},
+        boundaries_and_scales={
+            int(num_train_steps * 0.75): 0.3,
+            },
+
     )
 
     tree_flattened=True
     if tree_flattened:
         treedef_dict = {}
     else:
-        treedef_dict = None #current this case isn't built out
+        treedef_dict = None #current this case isn't built 
 
-    optax_stepper, optimizer_state, nn, loss_metrics = (
-        define_loss_and_optimization_stepper(
+    optax_stepper, optimizer_state, nn = (
+        define_optimization_stepper(
             loss=loss,
             nn=nn,
-            optax_optimizer_name=training_config.get("optax_optimizer", "adam"),
+            optax_optimizer_name=training_config.get("optaxOptimizer", "adam"),
             learning_rate=lr_schedule,
             treedef_dict=treedef_dict,
         )
     )
-
+    # for flat data
+    
+    if loss == 'l2':
+        testing_data = (testing_data[0],testing_data[2],testing_data[3],testing_data[4])
+        dY = int(training_data[2].shape[1] / (dM + 1))
+    else:
+        dY = int(training_data[1].shape[1] / (dM + 1))
     print("Started training...")
     nn = training_loop(
         stepper=optax_stepper,
@@ -293,22 +310,20 @@ def train_nn_approximator(
         array_permuter=training_arrays_permuter,
         n_epochs=n_epochs,
         data=training_data[0:2],
+        testing_data=testing_data,
+        dY=dY,
+        tree_def_nn=treedef_dict['treedef_nn'] if tree_flattened else None
     )
     if tree_flattened:
         nn = jax.tree_util.tree_unflatten(treedef_dict['treedef_nn'], nn)
     print("Done training")
 
     # Evaluate NN accuracy
-    if loss == "l2":
-        train_loss = loss_metrics(nn, *training_data)
-        test_loss = loss_metrics(nn, *testing_data)
-        # train_loss = loss_metrics(nn, n_train, 1, *training_data)
-        # test_loss = loss_metrics(nn, n_test, 1, *testing_data)
-    else:
-        train_loss = loss_metrics(nn, dY, *training_data)
-        test_loss = loss_metrics(nn, dY, *testing_data)
-        # train_loss = loss_metrics(nn, dY, n_train, 1, *training_data)
-        # test_loss = loss_metrics(nn, dY, n_test, 1, *testing_data)
+    if loss == 'l2':
+        training_data = (training_data[0],training_data[2],training_data[3],training_data[4])
+    train_loss = mean_flattened_h1_losses(nn, dY, *training_data)
+    test_loss = mean_flattened_h1_losses(nn, dY, *testing_data)
+
     results = {
         "train_accuracy_l2": train_loss[0],
         "train_accuracy_h1": train_loss[1],
@@ -319,7 +334,7 @@ def train_nn_approximator(
         "test_l2_loss": test_loss[2],
         "test_h1_loss": test_loss[3],
     }
-
+    print("results:", results)
     print("Total time", time.time() - start_time)
     return nn, results
 
@@ -329,8 +344,10 @@ def save_training_results(*, results, nn, config):
     save_to_pickle(config['training_metrics_path'], results )
 
     # Save nn parameters/ class parameters
-    makedirs(config['nn_weights_path'], exist_ok=True)
+    makedirs(config['nn_weights_path'].parents[0], exist_ok=True)
     eqx.tree_serialise_leaves(config['nn_weights_path'], nn)
+    config["nn_config"]['filename'] = config["nn_weights_path"]
+    print(config['nn_class_path'])
     save_to_pickle(config['nn_class_path'], config['nn_config'])
 
 
@@ -358,7 +375,10 @@ def train_nn_in_embedding_space(
     # Load training/testing data from disk, onto GPU as jax arrays
     data_config = config["data"]
     print("Loading data to GPU, takes a few seconds..")
+    # if config["training"]["loss"] == "h1":
     data = load_data_disk_direct_to_gpu(data_config)
+    # else:
+    #     data = load_data_disk_direct_to_gpu_no_jacobians(data_config)
 
     # Embed training data using encoder/decoder bases/cobases
     encodec_dict = config["encoder_decoder"]
@@ -367,16 +387,21 @@ def train_nn_in_embedding_space(
         data = embed_data_in_encoder_decoder_subspaces(data, encodec_dict)
 
     print("Splitting data into training/testing data")
+    data_config['jacobian'] = (config["training"]["loss"] == "h1")
     training_data, testing_data = split_training_testing_data_flat(
         data, data_config, calculate_norms=True
     )
-
     # Set up the neural network and train it
     nn_config = config["nn"]
     nn_config["input_size"] = training_data[0].shape[1]
-    nn_config["output_size"] = int(
-        training_data[1].shape[1] / (nn_config["input_size"] + 1)
-    )
+    if config["training"]["loss"] == "h1": 
+        # If loss is h1, the data is a concatenation of Y & flattened dYdX
+        # the networks output should be the dimension of Y
+        nn_config["output_size"] = int(
+            training_data[1].shape[1] / (nn_config["input_size"] + 1)
+        )
+    else:
+        nn_config["output_size"] = training_data[1].shape[1]
 
     print("Instantiating the NN, takes a few seconds")
     untrained_approximator, permute_key = instantiate_nn(

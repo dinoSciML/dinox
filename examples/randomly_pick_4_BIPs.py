@@ -32,7 +32,7 @@ parser.add_argument(
     "-problem_name",
     "--problem_name",
     type=str,
-    default="nonlinear_diffusion_reaction",
+    default="hyperelasticity",
     help="Problem name",
 )
 

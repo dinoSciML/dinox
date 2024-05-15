@@ -19,12 +19,12 @@ from os import makedirs
 from typing import Dict, Tuple
 
 import jax
-
+import numpy as np
 # TODO: python dinox.embed_data --cli_args which uses the CLI arguments from reduce_data.py (deprecated -- to be removed)
 import jax.numpy as jnp
-from opt_einsum import contract  # opt_einsum is a dependency
+from opt_einsum import contract
 
-from .data_utilities import __load_shaped_jax_array_direct_to_gpu, makedirs
+from ._data_utilities import __load_shaped_jax_array_direct_to_gpu, makedirs
 
 
 def embed_data_in_encoder_decoder_subspaces(
@@ -67,7 +67,8 @@ def embed_data_in_encoder_decoder_subspaces(
     encoder_basis_path = encoder_decoder_config_dict["encoder_basis_path"]
     encoder_cobasis_path = encoder_decoder_config_dict["encoder_cobasis_path"]
     decoder_cobasis_path = encoder_decoder_config_dict.get("decoder_cobasis_path")
-    reduced_zip_filename = "mq_data_reduced.npz"
+    batched_encoding = encoder_decoder_config_dict["batchedEncoding"]
+    reduced_zip_filename = "mq_data_reduced.npz" #TODO make this more general
 
     if len(input_output_data) == 3:
         X, fX, dfXdX = input_output_data
@@ -100,15 +101,31 @@ def embed_data_in_encoder_decoder_subspaces(
         jnp.save(save_dir + "/X_reduced.npy", reduced_X)
         jnp.save(save_dir + "/fX_reduced.npy", reduced_fX)
         print("Saved embedded training data files to disk.")
-
+    
     if dfXdX is not None:
-        reduced_dfXdX = contract(
-            "nxu,xr->nur",
-            dfXdX,
-            __load_shaped_jax_array_direct_to_gpu(encoder_basis_path, (X.shape[1], -1)
-            ),
-            backend="jax",
-        )
+        #incrementally compute and transfer to CPU
+        if batched_encoding:
+            print("Batching the encoding of the Jacobians")
+            total_len = len(dfXdX)
+            batch_size = 50 #hard cocded
+            start_idx, end_idx = 0, batch_size
+            encoder = __load_shaped_jax_array_direct_to_gpu(encoder_basis_path, (X.shape[1], -1))
+            reduced_dfXdX = []
+            while start_idx < total_len:
+                reduced_dfXdX_batch = \
+                    contract("nxu,xr->nur", dfXdX[start_idx:end_idx], encoder, backend="jax")
+                reduced_dfXdX.append(jax.device_put(reduced_dfXdX_batch, jax.devices("cpu")[0]))
+                start_idx = end_idx
+                end_idx = start_idx + batch_size
+            reduced_dfXdX = jax.device_put(np.concatenate(reduced_dfXdX,axis = 0))
+        else:
+            reduced_dfXdX = contract(
+                "nxu,xr->nur",
+                dfXdX,
+                __load_shaped_jax_array_direct_to_gpu(encoder_basis_path, (X.shape[1], -1)
+                ),
+                backend="jax",
+            )
         if save_dir:
             jnp.save(save_dir + "/dfXdX_reduced.npy", reduced_dfXdX)
             jnp.savez(

@@ -39,7 +39,7 @@ parser.add_argument(
     "-problem_name",
     "--problem_name",
     type=str,
-    default="nonlinear_diffusion_reaction",
+    default= "helmholtz", #"nonlinear_diffusion_reaction", #"hyperelasticity",
     help="Problem name",
 )
 
@@ -47,7 +47,7 @@ parser.add_argument(
     "-n_samples",
     "--n_samples",
     type=int,
-    default=10000,
+    default=50000,
     help="N prior/forward solve/jacobian samples",
 )
 parser.add_argument(
@@ -95,31 +95,69 @@ for i, rel_noise in enumerate(
     # Extract BiLaplacianPrior parameters as discrete matrices, so that we don't rely on hippylib prior instantiation afterwards
     M_mat = dl.as_backend_type(prior.M).mat()
     row, col, val = M_mat.getValuesCSR()
-    M_csr = ss.csr_matrix((val, col, row))
+    M_csc = ss.csr_matrix((val, col, row)).tocsc()
+    # from scipy.linalg import cholesky, eigh, eigh_tridiagonal, ldl
+
+    # L, d, P = ldl(M_csr)
+    # eigs, V = eigh_tridiagonal(np.diag(d), np.diag(d, 1))
+
+    # def M_sqrt_action(x):
+    #     return L @ (V * eigs) @ V.T @ L.T @ x
+    # from sksparse.cholmod import cholesky
+    # factor = cholesky(M_csr)
+    # L = factor.L().todense()
+    # print(factor.L())
+    # print(np.linalg.norm(L.dot(L.T) - M_csr.todense())) #/np.linalg.norm(M_csr.todense())
+
     A_mat = dl.as_backend_type(prior.A).mat()
     row, col, val = A_mat.getValuesCSR()
     A_csr = ss.csr_matrix((val, col, row))
-    sqrtMPetsc = dl.as_backend_type(prior.sqrtM).mat()
-    row, col, val = (
-        sqrtMPetsc.getValuesCSR()
-    )  # I think they only give the csr, so we convert
-    sqrtMcsr = ss.csr_matrix((val, col, row))
+    # sqrtMPetsc = dl.as_backend_type(prior.sqrtM).mat()
+    # row, col, val = (
+    #     sqrtMPetsc.getValuesCSR()
+    # )  # I think they only give the csr, so we convert
+    # sqrtMcsr = ss.csr_matrix((val, col, row))
 
+
+    # print(sqrtMcsr.nnz, sqrtMcsr.shape[0]*sqrtMcsr.shape[1], sqrtMcsr.shape[0],sqrtMcsr.shape[1], len(val))
+    
     prior_params_dir = BIPproblem_dir + "prior/"
     os.makedirs(prior_params_dir, exist_ok=True)
-    save_scipy_csr(
-        prior_params_dir + "M", M_csr
-    )  # sort of redundant, each problems prior is the same, but whatever
+    precision = A_csr.todense().T@np.linalg.solve(M_csc.todense(),A_csr.todense())
+    cov = np.linalg.inv(precision)
+    evals_precision, evecs_cov = np.linalg.eigh(precision)
+    cov_evals = 1/evals_precision
+    cov_sqrt = evecs_cov @ np.diag(np.sqrt(cov_evals))@ evecs_cov.T
+    # np.save("dense_cov_sqrt)
+    
+    np.save(prior_params_dir+ "square_dense_C_sqrt.npy", cov_sqrt)
+    # save_scipy_csr(
+    #     prior_params_dir + "M", M_csr
+    # )  # sort of redundant, each problems prior is the same, but whatever
     # print(M_csr - load_jax_csr(data_dir + "prior/M").todense(). max())
-    save_scipy_csr(
-        prior_params_dir + "sqrtM", sqrtMcsr
-    )  # sort of redundant, each problems prior is the same, but whatever
-    save_scipy_csr(
-        prior_params_dir + "A", A_csr
-    )  # sort of redundant, each problems prior is the same, but whatever
-    np.save(
-        prior_params_dir + "mean_function_coefficients.npy", prior.mean.get_local()
-    )  # sort of redundant, each problems prior is the same, but whatever
+    # save_scipy_csr(
+    #     prior_params_dir + "sqrtM", sqrtMcsr
+    # )  # sort of redundant, each problems prior is the same, but whatever
+
+    # save_scipy_csr(
+    #     prior_params_dir + "A", A_csr
+    # )  # sort of redundant, each problems prior is the same, but whatever
+    # np.save(
+    #     prior_params_dir + "mean_function_coefficients.npy", prior.mean.get_local()
+    # )  # sort of redundant, each problems prior is the same, but whatever
+
+    #In the future, we should atually use batch sparse action from cupy, i.e. load sqrtMcsr to BCSR and 
+    #apply batch sampling. Would also be idea once batch sparse solving is available from cuda
+    # np.save(prior_params_dir+ "C_sqrt.npy", (ss.linalg.spsolve(A_csr, sqrtMcsr)).T.todense() )
+    # np.save(prior_params_dir+ "sampling_dim.npy", sqrtMcsr.shape[1])
+
+
+    precision = A_csr.todense().T@np.linalg.solve(M_csc.todense(),A_csr.todense())
+    cov = np.linalg.inv(precision)
+    evals_precision, evecs_cov = np.linalg.eigh(precision)
+    cov_evals = 1/evals_precision
+    cov_sqrt = evecs_cov @ np.diag(np.sqrt(cov_evals))@ evecs_cov.T    
+    np.save(prior_params_dir+ "square_dense_C_sqrt.npy", cov_sqrt)
 
     # Save data/observation parameters
     os.makedirs(BIPproblem_dir + "likelihood/", exist_ok=True)
@@ -131,7 +169,7 @@ for i, rel_noise in enumerate(
 
     ################################################################################
     # Generate training data + synthetic data observations from likelihood
-
+    print("Generating 50 problems out of which 4 will be chosen randomly")
     Vh = model.problem.Vh
 
     mesh = Vh[hp.STATE].mesh()
@@ -235,37 +273,19 @@ for i, BIPproblem_sub_dir in enumerate(
         data_dir + "Y_data.npy", mqy_data["y_data"]
     )  # in case we need them for the future
 
-    # Save prior parameters
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 # save cli_args save_base_folder, problem_name, n_samples, n_iid_data_per_sample
-
-# def choose_4_random_data_and_save_to_disk(problems_base_dir, problem_name)
-
-#     problem_dir = problem_name+"/"
-#     model_module = importlib.import_module(f"{problems_base_dir}{problem_name}+".model")
-#     settings = model_module.settings()
-#     ################################################################################
-#     # Set up the model
-
-#     n_iid_data_per_sample =
-
-#     settings["rel_noise"] = rel_noise
-
-#     pde, prior, misfit, mtrue, noise_stdev = model_module.model(settings)
-
-
-#     data = []
-#     while True:
-#         pick random data in y_data[24000:]
-#         #AS LONG AS THE L2 DISTANCE > PERCENTAGE OF L2 NORM
-#         data.append()
-
-#     save BIP data indices to disk
-
-
-# def instantiate_hippylib_BIP_model(problem_...., BIP_data_index_file)
-
-#     pde, prior, misfit, mtrue, noise_stdev = model_module.model(settings)
-#     misfit.d = data[index[i]]
-#     return hp.Model(pde, prior, misfit)

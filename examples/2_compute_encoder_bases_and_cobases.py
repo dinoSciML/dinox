@@ -127,7 +127,7 @@ for i, BIPproblem_sub_dir in enumerate(
         # Compute the projector RV_r from the basis
         RV_GN = hp.MultiVector(V_GN[0], V_GN.nvec())
         RV_GN.zero()
-        hp.MatMvMult(prior.R, V_GN, RV_GN)
+        hp.MatMvMult(prior.R, V_GN, RV_GN) 
 
         encoder_cobasis = hf.mv_to_dense(RV_GN)
 
@@ -143,16 +143,18 @@ for i, BIPproblem_sub_dir in enumerate(
         np.save(encoder_save_dir + "AS_d_GN", d_GN)
         np.save(encoder_save_dir + "AS_encoder_cobasis", encoder_cobasis)
 
+        plt.rc('text', usetex=True)
+        plt.rc('text.latex', preamble=r'\usepackage{amsmath}')
+
         fig, ax = plt.subplots()
         ax.semilogy(np.arange(len(d_GN)), d_GN)
-        print()
 
         ax.set(
-            xlabel="index", ylabel="eigenvalue", title="GEVP JJT/sigma^2 spectrum"
+            xlabel=r'$i$', ylabel=r'$\lambda_i$', title=r'Ordered Generalized Eigenvalues of $\displaystyle E_{\rho}[\nabla \log (\pi_{X|Y=y})\nabla\log(\pi_{X|Y=y})^{\top}]$'
         )  # TODO offline plot these! someone else do this..
         ax.grid()
 
-        fig.savefig("JJTsigma^-2_eigenvalues.pdf")
+        fig.savefig(f"{BIPproblem_dir}likelihood/JJTsigma^-2_eigenvalues.pdf")
 
     elif args.basis_type.lower() == "kle":
         KLE = hf.KLEProjector(prior)

@@ -26,7 +26,7 @@ from pathlib import Path
 from typing import Any, Dict
 import jax
 
-from .data_utilities import save_to_pickle, sub_dict
+from ._data_utilities import save_to_pickle, sub_dict
 from .train import train_nn_in_embedding_space, save_training_results
 
 jax.config.update("jax_enable_x64", True)
@@ -55,44 +55,20 @@ def define_cli_arguments(cli: ArgumentParser) -> None:
 
     # Optimization parameters
     cli.add_argument("-loss", type=str, default='h1', choices=['h1','l2'], help="H1 or L2 loss?")
-    cli.add_argument("-batchSize", type=int, default=25, help="# samples per batch during training.")
+    cli.add_argument("-batchSize", type=int, default=10, help="# samples per batch during training.") #25
     cli.add_argument("-optaxOptimizer", type=str, default="adam", help="Optax optimizer to trian with")
-    cli.add_argument("-nEpochs", type=int, default=500, help="# epochs for training.")
-    cli.add_argument("-stepSize", type=float, default=1e-3, help="Learning rate for optax optimizer.")
+    cli.add_argument("-nEpochs", type=int, default=1500, help="# epochs for training.") #1000
+    cli.add_argument("-stepSize", type=float, default=1e-3, help="Learning rate for optax optimizer.") #3e-4 for L2 training
 
     # Encoder/Decoder parameters
     cli.add_argument("-encoder", type=str, default="as",choices=['as','kle', ''], help="Type of encoder used.")
     cli.add_argument("-decoder", type=str, default="", choices=['pod', 'jjt',''], help="Type of decoder used.")
     cli.add_argument("-saveEmbeddedData", action="store_true", help="Flag to save embedded training data.")
+    cli.add_argument("-batchedEncoding", action="store_true", help="Whether to batch the Encoding operation for memory's sake.")
 
     # Other 
-    cli.add_argument("-runSeed", type=int, default=777, help="Seed for random # generation.")
-
-    # # cli.add_argument(
-    # #     "-fixed_input_rank",
-    # #     dest="fixed_input_rank",
-    # #     required=False,
-    # #     default=200,
-    # #     help="rank for input of AS network",
-    # #     type=int,
-    # # )
-    # # cli.add_argument(
-    # #     "-fixed_output_rank",
-    # #     dest="fixed_output_rank",
-    # #     required=False,
-    # #     default=50,
-    # #     help="rank for output of AS network",
-    # #     type=int,
-    # # )
-    # # cli.add_argument( #reintroduce if we need the dimension of the problem to be lower than the number of bases
-    # # given by AS
-    # #     "-truncation_dimension",
-    # #     dest="truncation_dimension",
-    # #     required=False,
-    # #     default=200,
-    # #     help="truncation dimension for low rank networks",
-    # #     type=int,
-    # # )
+    cli.add_argument("-runSeed", type=int, default=0, help="Seed for random # generation.")
+    8 
 
 def create_config_dict(cli_args: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
     """
@@ -135,6 +111,8 @@ def create_config_dict(cli_args: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
     >>> print(config['nn']['architecture'])
     'generic_dense'
     """
+    # Define the keys for each configuration dict (*_keys is a required naming convention,
+    # since we define the configuration dict names by removing this suffix
     nn_keys = ("architecture", "depth", "activation") #layer_width defined later
     data_keys = ("nTrain", "nTest")
     training_keys = ("stepSize", "batchSize", "optaxOptimizer", "nEpochs", "loss")
@@ -143,6 +121,7 @@ def create_config_dict(cli_args: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
         "encoder",
         "decoder",
         "saveEmbeddedData",
+        "batchedEncoding"
     )
     # This line has to be called in the same scope as the keys defined above
     config = {
@@ -158,23 +137,22 @@ def create_config_dict(cli_args: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
         nn_save_name += f"_{key}{cli_args[key]}"
     print("nn_save_name ",nn_save_name)
 
-
     # Additional configuration related to file paths and directories
     problem_dir = cli_args["problemDir"]
 
     #Load/Save paths
     config["data"]["dir"] = Path(problem_dir, "samples")
     config["data"]["N"] = load(Path(config["data"]["dir"],"X_data.npy")).shape[0]
-    config["encoder_decoder"]["dir"] = Path(problem_dir, "encoder"),
+    # config["encoder_decoder"]["dir"] = Path(problem_dir, "encoder"),
     config["encoder_decoder"]["save_dir"] = Path(problem_dir, "samples") if cli_args["saveEmbeddedData"] else None
     config["data"]["filenames"] = ("X_data.npy", "fX_data.npy", "dfXdX_data.npy") #User should be able to specify this...
 
     config["results"] = {}
     config["results"]["nn_config"] = config["nn"]
-    config["results"]["nn_class_path"] = Path(problem_dir, "trained_nn", nn_save_name, ".eqx_class")
-    config["results"]["nn_weights_path"] = Path(problem_dir, "trained_nn", nn_save_name, ".eqx")
-    config["results"]["training_metrics_path"] = Path(problem_dir, "training_metrics", nn_save_name, ".pkl")
-    config["config_path"] = Path(problem_dir, "config", nn_save_name, ".pkl")
+    config["results"]["nn_class_path"] = Path(problem_dir, "trained_nn", nn_save_name+".eqx_class")
+    config["results"]["nn_weights_path"] = Path(problem_dir, "trained_nn", nn_save_name+".eqx")
+    config["results"]["training_metrics_path"] = Path(problem_dir, "training_metrics", nn_save_name+".pkl")
+    config["config_path"] = Path(problem_dir, "config", nn_save_name+".pkl")
 
     encodec_config = config["encoder_decoder"]
     if encodec_config["encoder"]:
@@ -254,18 +232,11 @@ def main() -> int:
     define_cli_arguments(cli)
     cli_args = vars(cli.parse_args())
 
-
-    ###################################################################################
-    # Define the keys for each configuration dict (*_keys is a required naming
-    # convention here, since we define the configuration dict names by *
-    ##################################################################################
-
     # Create a heirarchical configuration dictionary from CLI arguments
     config = create_config_dict(cli_args)
+
     # Save configuration for reproducibility
     save_to_pickle(config['config_path'], config)  
-
-    # ESS, max weight,  k-fold cross validation (can do this for training lazymaps)
 
     # Perform the training of the neural network
     trained_approximator, results = train_nn_in_embedding_space(
@@ -274,7 +245,7 @@ def main() -> int:
 
     save_training_results(results=results, nn=trained_approximator, config=config['results'])
     return 0
-
+    # ESS, max weight,  k-fold cross validation (can do this for training lazymaps)
 
 if __name__ == "__main__":
     sys.exit(main())

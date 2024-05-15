@@ -27,13 +27,13 @@ from jax.lax import dynamic_slice_in_dim as jittable_slice
 
 __all__ = [
     "grad_mean_l2_norm_loss",
-    "grad_mean_h1_norm_loss_flattened",
-    "compute_batched_flattened_h1_loss_metrics",
-    "compute_flattened_h1_loss_metrics",
-    "compute_l2_loss_metrics",
+    "grad_mean_flattened_h1_norm_loss",
+    "mean_batched_flattened_h1_losses",
+    "mean_flattened_h1_losses",
+    "mean_l2_losses",
     "mean_h1_seminorm_and_l2_errors_and_rel_errors_flat",
+    "__mean_l2_norm_loss"
 ]
-
 
 # # @eqx.filter_jit
 # def __value_and_jacrev(f: Callable[[jax.Array], jax.Array], xs: jax.Array) -> jax.Array:
@@ -604,8 +604,7 @@ def mean_l2_errors_and_rel_errors(
     outputs and Jacobians separately. This ensures efficient batch processing and is
     particularly useful for gradient-based optimization where sensitivity information is crucial.
     """
-    predicted_Y_dYdX = __value_and_jacrev_flattened(nn, X)
-    Yhat_Y_L2_errors = (jnp.sum((predicted_Y_dYdX.squeeze() - Y) ** 2.0, axis=1),)
+    Yhat_Y_L2_errors = np.sum((vmap(nn)(X)- Y) ** 2.0, axis=1)
     return jnp.array(
         [
             jnp.mean(Yhat_Y_L2_errors),
@@ -1001,19 +1000,15 @@ def __mean_l2_norm_loss(
     -----
     This function applies the model to the input data, squeezes the output dimensions,
     and then computes the mean L2 loss using Optax's `l2_loss` function.
-    """
-    return jnp.mean(optax.l2_loss(nn(input_X).squeeze(), actual_Y))
-
+    """ #vmap L2nn(in, out)
+    return jnp.mean(optax.l2_loss(vmap(nn)(input_X), actual_Y))
 
 # Gradient functions using Equinox's filtering on gradient calculation
 # __grad_mean_h1_norm_loss = eqx.filter_grad(__mean_h1_norm_loss)
 grad_mean_l2_norm_loss = eqx.filter_grad(__mean_l2_norm_loss)
 
-# Lambda to create gradient function for mean H1 norm loss dynamically based on dimensionality
-# __grad_mean_l2_norm_loss_flattened = eqx.filter_grad(__mean_l2_norm_loss)
-
 # Gradient function for the flattened H1 norm loss
-grad_mean_h1_norm_loss_flattened = eqx.filter_grad(__mean_h1_norm_loss_flattened)
+grad_mean_flattened_h1_norm_loss = eqx.filter_grad(__mean_h1_norm_loss_flattened)
 
 
 @jax.jit
@@ -1047,7 +1042,7 @@ def __elementwise_div(
     return scores / normalizers
 
 
-def compute_flattened_h1_loss_metrics(
+def mean_flattened_h1_losses(
     nn: eqx.Module,
     dY: int,
     X: jax.Array,  # Input features are JAX arrays
@@ -1094,7 +1089,7 @@ def compute_flattened_h1_loss_metrics(
     return *(100 * (1.0 - np.sqrt(errors[2:]))), *(errors[0:2])
 
 
-def compute_l2_loss_metrics(
+def mean_l2_losses(
     nn: eqx.Module,
     X: jax.Array,  # Input features are JAX arrays
     Y: jax.Array,  # Combined output and Jacobian data are JAX arrays
@@ -1135,7 +1130,7 @@ def compute_l2_loss_metrics(
     return 100 * (1.0 - np.sqrt(errors[1])), errors[0]
 
 
-def compute_batched_flattened_h1_loss_metrics(
+def mean_batched_flattened_h1_losses(
     nn: eqx.Module,
     dY: int,
     batch_size: int,
@@ -1192,7 +1187,7 @@ def compute_batched_flattened_h1_loss_metrics(
     return *(100 * (1.0 - np.sqrt(errors[2:]))), *(errors[0:2])
 
 
-def compute_batched_l2_loss_metrics(
+def mean_batched_l2_losses(
     nn: eqx.Module,
     batch_size: int,
     n_batches: int,
@@ -1246,7 +1241,7 @@ def compute_batched_l2_loss_metrics(
     return *(100 * (1.0 - np.sqrt(errors[2:]))), *(errors[0:2])
 
 
-# def compute_h1_loss_metrics(
+# def mean_h1_losses(
 #     nn: eqx.Module,
 #     dY: int,
 #     batch_size: int,
@@ -1305,7 +1300,7 @@ def compute_batched_l2_loss_metrics(
 
 
 # # @eqx.filter_jit
-# def batched_compute_h1_loss_metrics(
+# def batched_mean_h1_losses(
 #     nn: eqx.Module,
 #     dM: int,
 #     batch_size: int,
@@ -1398,7 +1393,7 @@ def compute_batched_l2_loss_metrics(
 #     )
 
 
-# def create_compute_h1_loss_metrics(dM: int, batch_size: int) -> Callable:
+# def create_mean_h1_losses(dM: int, batch_size: int) -> Callable:
 #     """
 #     Creates a closure function that computes various loss metrics, including mean squared error (MSE),
 #     mean squared Jacobian error (MSJE), and their relative errors, as well as accuracy measures for both
@@ -1434,7 +1429,7 @@ def compute_batched_l2_loss_metrics(
 #         dM, batch_size
 #     )
 
-#     def compute_loss_metrics(nn, X, Y, dYdX, Y_L2_norms, dYdX_L2_norms, n_batches):
+#     def mean_losses(nn, X, Y, dYdX, Y_L2_norms, dYdX_L2_norms, n_batches):
 #         mse = 0.0
 #         msje = 0.0
 #         rel_mse = 0.0
@@ -1456,4 +1451,4 @@ def compute_batched_l2_loss_metrics(
 
 #         return acc_l2, acc_h1, mean_h1_norm_loss
 
-#     return compute_loss_metrics
+#     return mean_losses
