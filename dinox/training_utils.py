@@ -1,10 +1,16 @@
 import time
 from typing import Any, Callable, Dict, Iterable, Literal, Tuple
 
-import equinox as eqx
-import jax
 import jax.numpy as jnp
+import jax.tree_util
 import optax
+from equinox import Module as eqxModule
+from equinox import apply_updates as eqx_apply_updates
+from equinox import filter as eqx_filter
+from equinox import filter_jit
+from equinox import is_inexact_array as eqx_is_inexact_array
+from jax import Array as jax_Array
+from jax import device_put as jax_device_put
 from jax.tree_util import PyTreeDef
 
 from .data_utilities import (check_batch_size_validity,
@@ -38,7 +44,7 @@ def create_permuter(N: int, cp_random_seed: int = None) -> Callable:
     if cp_random_seed is not None:
         cp.random.seed(cp_random_seed)
 
-    def permute_arrays(*arrays: Iterable[jax.Array]) -> Tuple[jax.Array, ...]:
+    def permute_arrays(*arrays: Iterable[jax_Array]) -> Tuple[jax_Array, ...]:
         perm = cp.random.permutation(indices)
         # Use DLPack to transfer data between CuPy and JAX and apply permutation
         return (dlpack2jax(cp.from_dlpack(jax2dlpack(arr))[perm]) for arr in arrays)
@@ -54,10 +60,10 @@ def create_slicer(*, batch_size: int, num_input_outputs: int) -> Callable:
 
     if num_input_outputs == 2:
 
-        @eqx.filter_jit
+        @filter_jit
         def slice_data(
-            X: jax.Array, out_1: jax.Array, end_idx: int
-        ) -> Tuple[int, jax.Array, jax.Array, jax.Array]:
+            X: jax_Array, out_1: jax_Array, end_idx: int
+        ) -> Tuple[int, jax_Array, jax_Array, jax_Array]:
             """
             Slices X and out_1 from end_idx for batch_size items.
 
@@ -72,10 +78,10 @@ def create_slicer(*, batch_size: int, num_input_outputs: int) -> Callable:
 
     elif num_input_outputs == 3:
 
-        @eqx.filter_jit
+        @filter_jit
         def slice_data(
-            X: jax.Array, out_1: jax.Array, out_2: jax.Array, end_idx: int
-        ) -> Tuple[int, jax.Array, jax.Array, jax.Array]:
+            X: jax_Array, out_1: jax_Array, out_2: jax_Array, end_idx: int
+        ) -> Tuple[int, jax_Array, jax_Array, jax_Array]:
             """
             Slices X, out_1, and out_2 from end_idx for batch_size items.
 
@@ -97,16 +103,16 @@ def create_optax_optimization_stepper(
     LOSS_NAME: Literal[
         "L2", "H1"
     ],  # "score", "hybrid", "h1hybrid", "meanVar", "meanEnt", "fisher",
-    nn: eqx.Module,
+    nn: eqxModule,
     OPTAX_OPTIMIZER_NAME: str,
     learning_rate: float | optax.Schedule,
-) -> Tuple[Callable, optax.OptState, PyTreeDef, eqx.Module]:
+) -> Tuple[Callable, optax.OptState, PyTreeDef, eqxModule]:
     """
     Creates a jitted optimization stepper for a neural network using an Optax optimizer.
 
     Parameters:
         LOSS_NAME (Literal["L2", "H1"]): Chooses the gradient function.
-        nn (eqx.Module): Neural network to optimize.
+        nn (eqxModule): Neural network to optimize.
         OPTAX_OPTIMIZER_NAME (str): Name of the Optax optimizer.
         learning_rate (float | optax.Schedule): Learning rate.
 
@@ -127,7 +133,7 @@ def create_optax_optimization_stepper(
     optimizer = optax.__getattribute__(OPTAX_OPTIMIZER_NAME)(
         learning_rate=learning_rate
     )
-    optimizer_state = optimizer.init(eqx.filter(nn, eqx.is_inexact_array))
+    optimizer_state = optimizer.init(eqx_filter(nn, eqx_is_inexact_array))
 
     flat_nn, treedef_nn = jax.tree_util.tree_flatten(nn)
     flat_optimizer_state, treedef_optimizer_state = jax.tree_util.tree_flatten(
@@ -135,13 +141,13 @@ def create_optax_optimization_stepper(
     )
     if LOSS_NAME == "L2":
 
-        @eqx.filter_jit
+        @filter_jit
         def take_step(
             flat_optimizer_state: optax.OptState,
-            flat_nn: eqx.Module,
-            X: jax.Array,
-            Y: jax.Array,
-        ) -> Tuple[optax.OptState, eqx.Module]:
+            flat_nn: eqxModule,
+            X: jax_Array,
+            Y: jax_Array,
+        ) -> Tuple[optax.OptState, eqxModule]:
             nn = jax.tree_util.tree_unflatten(treedef_nn, flat_nn)
             updates, new_optimizer_state = optimizer.update(
                 gradient(nn, X, Y),
@@ -150,20 +156,20 @@ def create_optax_optimization_stepper(
                 ),
                 nn,
             )
-            new_flat_nn = jax.tree_util.tree_leaves(eqx.apply_updates(nn, updates))
+            new_flat_nn = jax.tree_util.tree_leaves(eqx_apply_updates(nn, updates))
             new_flat_optimizer_state = jax.tree_util.tree_leaves(new_optimizer_state)
             return new_flat_optimizer_state, new_flat_nn
 
     elif LOSS_NAME == "H1":
 
-        @eqx.filter_jit
+        @filter_jit
         def take_step(
             flat_optimizer_state: optax.OptState,
-            flat_nn: eqx.Module,
-            X: jax.Array,
-            Y: jax.Array,
-            dYdX: jax.Array,
-        ) -> Tuple[optax.OptState, eqx.Module]:
+            flat_nn: eqxModule,
+            X: jax_Array,
+            Y: jax_Array,
+            dYdX: jax_Array,
+        ) -> Tuple[optax.OptState, eqxModule]:
             nn = jax.tree_util.tree_unflatten(treedef_nn, flat_nn)
             updates, new_optimizer_state = optimizer.update(
                 gradient(nn, X, Y, dYdX),
@@ -172,7 +178,7 @@ def create_optax_optimization_stepper(
                 ),
                 nn,
             )
-            new_flat_nn = jax.tree_util.tree_leaves(eqx.apply_updates(nn, updates))
+            new_flat_nn = jax.tree_util.tree_leaves(eqx_apply_updates(nn, updates))
             new_flat_optimizer_state = jax.tree_util.tree_leaves(new_optimizer_state)
             return new_flat_optimizer_state, new_flat_nn
 
@@ -181,15 +187,15 @@ def create_optax_optimization_stepper(
 
 def n_epochs(
     *,
-    stepper: Callable[..., Tuple[optax.OptState, eqx.Module]],
+    stepper: Callable[..., Tuple[optax.OptState, eqxModule]],
     slicer: Callable,
-    nn: eqx.Module,
+    nn: eqxModule,
     optimizer_state: optax.OptState,
     random_permuter: Callable[..., Tuple[jnp.ndarray, ...]],
     batches_arange: jnp.ndarray,
     epochs_arange: jnp.ndarray,
     training_data: Tuple[jnp.ndarray, ...],
-) -> Tuple[optax.OptState, eqx.Module]:
+) -> Tuple[optax.OptState, eqxModule]:
     """
     Executes a training loop over epochs using batched and permuted training data.
 
@@ -204,7 +210,7 @@ def n_epochs(
         training_data: Tuple of training arrays (e.g., features, labels).
 
     Returns:
-        Tuple[optax.OptState, eqx.Module]: The final optimizer state and the trained model.
+        Tuple[optax.OptState, eqxModule]: The final optimizer state and the trained model.
     """
     for _ in epochs_arange:
         X, *other_data = random_permuter(*training_data)
@@ -263,7 +269,7 @@ def load_encoded_data_train_and_test_dino(
 
 
 def train_and_test_dino(
-    nn: eqx.Module,
+    nn: eqxModule,
     N_MAX_EPOCHS: int,
     STEP_SIZE: float,
     BATCH_SIZE: int,
@@ -272,7 +278,7 @@ def train_and_test_dino(
     OPTAX_OPTIMIZER_NAME: str = "adam",
     RANDOM_PERMUTATIONS_SEED: int = 0,  # val and test have to have Jacobians in them!!!
     LOSS_NAME: str = "H1",
-) -> Tuple[eqx.Module, Dict[str, Any]]:
+) -> Tuple[eqxModule, Dict[str, Any]]:
     # Place on GPU!
 
     if not all(
@@ -281,7 +287,7 @@ def train_and_test_dino(
     ):
         print("Training data did not yet reside on GPU. Placing on GPU.")
         training_data = tuple(
-            jax.device_put(train_val_test["train"][k]) for k in ("X", "fX", "dfXdX")
+            jax_device_put(train_val_test["train"][k]) for k in ("X", "fX", "dfXdX")
         )
     else:
         training_data = tuple(train_val_test["train"][k] for k in ("X", "fX", "dfXdX"))

@@ -1,32 +1,32 @@
 from typing import Callable
 
-import equinox as eqx
 import jax
 import jax.numpy as jnp
-from jax import vjp, vmap
+from equinox import Module as eqxModule
+from equinox import filter_grad, filter_jit
+from jax import jit, vjp, vmap
 
-# losses.py
 squared_norm = lambda x: jnp.sum(x**2)
-vectorized_squared_norm = jax.vmap(jax.jit(squared_norm), in_axes=0)
+vectorized_squared_norm = jax.vmap(jit(squared_norm), in_axes=0)
 cpu_vectorized_squared_norm = jax.vmap(
-    jax.jit(squared_norm, device=jax.devices("cpu")[0]), in_axes=0
+    jit(squared_norm, device=jax.devices("cpu")[0]), in_axes=0
 )
-divide = jax.jit(lambda scores, normalizations: scores / normalizations)
-cpu_divide = jax.jit(
+divide = jit(lambda scores, normalizations: scores / normalizations)
+cpu_divide = jit(
     lambda scores, normalizations: scores / normalizations, device=jax.devices("cpu")[0]
 )
 # This is only an Monte Carlo estimate of the L2 Bochner loss, i.e. just an empirical MSE.
-L2_Bochner_loss: Callable[[eqx.Module, jax.Array, jax.Array], float] = eqx.filter_jit(
+L2_Bochner_loss: Callable[[eqxModule, jax.Array, jax.Array], float] = filter_jit(
     lambda nn, input_X, actual_Y: jnp.mean(
         jnp.sum((vmap(nn)(input_X) - actual_Y) ** 2, axis=1)
     )
 )  # cpu version?
-vectorized_grad_L2_Bochner_loss = eqx.filter_grad(L2_Bochner_loss)  # cpu_ version?
+vectorized_grad_L2_Bochner_loss = filter_grad(L2_Bochner_loss)  # cpu_ version?
 
 
-@eqx.filter_jit
+@filter_jit
 def vectorized_H1_Bochner_loss(
-    nn: eqx.Module, input_X: jax.Array, actual_Y: jax.Array, actual_dYdX: jax.Array
+    nn: eqxModule, input_X: jax.Array, actual_Y: jax.Array, actual_dYdX: jax.Array
 ) -> float:
     predicted_Y, predicted_dYdX = vectorized_value_and_jacrev(nn, input_X)
     return jnp.mean(
@@ -35,43 +35,24 @@ def vectorized_H1_Bochner_loss(
     )
 
 
-vectorized_grad_H1_Bochner_loss = eqx.filter_grad(vectorized_H1_Bochner_loss)
+vectorized_grad_H1_Bochner_loss = filter_grad(vectorized_H1_Bochner_loss)
 
 
 def vectorized_value_and_jacrev(
     f: Callable[[jax.Array], jax.Array], xs: jax.Array
 ) -> jax.Array:
     """
-    Computes the function value and Jacobian for each input in a batch using vector-Jacobian product (vjp).
+    Compute function values and full Jacobians for a batch of inputs using vjp.
 
-    Parameters
-    ----------
-    f : Callable[[jax.Array], jax.Array]
-        The function for which the values and Jacobians are computed. This function should accept
-        a JAX array as input and return a JAX array as output.
-    xs : jax.Array
-        An array of inputs to the function `f`. The function `f` will be evaluated at each of these inputs.
+    Parameters:
+        f (Callable[[jax.Array], jax.Array]): Function to evaluate.
+        xs (jax.Array): Batch of inputs.
 
-    Returns
-    -------
-    jax.Array
-        An array of tuples, where each tuple contains the function value at the corresponding input
-        and the Jacobian matrix of the function at that input. The Jacobian matrix is provided for each
-        input independently.
+    Returns:
+        jax.Array: Array of tuples (f(x), Jacobian at x).
 
-    Notes
-    -----
-    This function uses JAX's automatic differentiation capabilities via the `vjp` function, which returns
-    a function (`pullback`) that computes the vector-Jacobian product for a given vector. Here, the identity
-    matrix is used with `vmap` to effectively compute the full Jacobian matrix for each input.
-
-    The `vmap` function is used to vectorize `value_and_jacrev_x` across all inputs in `xs`, thereby
-    enabling efficient batch processing of the function and its Jacobian computation. The function assumes
-    that all inputs in `xs` can be processed independently and in parallel, which is typical for many
-    scientific computing and machine learning applications.
-
-    Each element in `results` will be a tuple, with the first element being the squared value of the input,
-    and the second element being the Jacobian at that point, all encapsulated in a Jacobian matrix.
+    Notes:
+        Uses JAX's vjp with an identity matrix and vmap for efficient batch processing.
     """
     _, pullback = vjp(f, xs[0])
     basis = jnp.eye(
@@ -101,55 +82,35 @@ def vectorized_value_and_jacrev(
     return vmap(value_and_jacrev_x)(xs)
 
 
-@eqx.filter_jit(backend="cpu")
+@filter_jit(backend="cpu")
 def cpu_compute_bochner_relative_errors(
-    nn: eqx.Module,
+    nn: eqxModule,
     X: jax.Array,
-    Y: jax.Array,
-    dYdX: jax.Array,
-    Y_L2_norms: jax.Array,
-    dYdX_Frobenius_norms: jax.Array,
+    fX: jax.Array,
+    dfXdX: jax.Array,
+    fX_L2_norms: jax.Array,
+    dfXdX_Frobenius_norms: jax.Array,
 ) -> jax.Array:
     """
-    Computes mean squared errors for a flat structure of predicted and actual values
-    and their Jacobians over a batch, and normalizes these errors by the L2 norms of
-    the actual values and Jacobians.
+    Compute RMSE for outputs and Jacobians, plus their normalized errors.
 
-    Parameters
-    ----------
-    nn : eqx.Module
-        The neural network model that predicts both values and their Jacobians.
-    X : jax.Array
-        The input values
-    Y : jax.Array
-        The array of output values for comparison.
-    dYdX: jax. Array
-        The array of Jacobians
-    Y_L2_norms : jax.Array
-        The L2 norms of the output values.
-    dYdX_Frobenius_norms : jax.Array
-        The Frobenius norms of the Jacobians.
+    Parameters:
+        nn: eqxModule - Model predicting outputs and Jacobians.
+        X: jax.Array - Inputs.
+        fX: jax.Array - Target outputs.
+        dfXdX: jax.Array - Target Jacobians.
+        fX_L2_norms: jax.Array - L2 norms of outputs.
+        dfXdX_Frobenius_norms: jax.Array - Frobenius norms of Jacobians.
 
-    Returns
-    -------
-    jax.Array
-        An array containing the mean squared errors for the outputs and Jacobians,
-        as well as their respective normalized mean squared errors, calculated as:
-        [mean MSE for Y, mean MSE for dYdX, normalized MSE for Y, normalized MSE for dYdX].
-
-    Notes
-    -----
-    This function leverages JAX's `vmap` to vectorize the computation of squared differences,
-    applies a lambda function to compute squared errors, and splits the result to handle
-    outputs and Jacobians separately. This ensures efficient batch processing and is
-    particularly useful for gradient-based optimization where sensitivity information is crucial.
+    Returns:
+        jax.Array: Tuple (RMSE(NN(X);fX), RMSE(JacNN(X); dfXdX), normalized RMSE(NN) normalized RMSE(JacNN).
     """
 
-    predicted_Y, predicted_dYdX = vectorized_value_and_jacrev(
+    predicted_fX, predicted_dfXdX = vectorized_value_and_jacrev(
         nn, X
     )  # cpu?? ensure nn and X are on cpu
-    Yhat_squared_norm_errors = cpu_vectorized_squared_norm(predicted_Y - Y)
-    dYhatdX_squared_norm_errors = cpu_vectorized_squared_norm(predicted_dYdX - dYdX)
+    Yhat_squared_norm_errors = cpu_vectorized_squared_norm(predicted_fX - fX)
+    dYhatdX_squared_norm_errors = cpu_vectorized_squared_norm(predicted_dfXdX - dfXdX)
 
     return (
         jnp.sqrt(
@@ -159,9 +120,9 @@ def cpu_compute_bochner_relative_errors(
             jnp.mean(dYhatdX_squared_norm_errors)
         ),  # Root mean (Jacobian) squared error
         jnp.sqrt(
-            jnp.mean(cpu_divide(Yhat_squared_norm_errors, Y_L2_norms))
+            jnp.mean(cpu_divide(Yhat_squared_norm_errors, fX_L2_norms))
         ),  # Root mean relative (function) squared error
         jnp.sqrt(
-            jnp.mean(cpu_divide(dYhatdX_squared_norm_errors, dYdX_Frobenius_norms))
+            jnp.mean(cpu_divide(dYhatdX_squared_norm_errors, dfXdX_Frobenius_norms))
         ),  # Root mean relative Jacobian squared error
     )

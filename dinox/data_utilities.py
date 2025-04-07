@@ -1,14 +1,16 @@
 from typing import Dict, Iterable, Tuple
 
-import jax
 import jax.numpy as jnp
+from jax import Array as jax_Array
+from jax import default_device as jax_default_device
+from jax import devices as jax_devices
 from numpy.typing import ArrayLike
 
 from .losses import cpu_vectorized_squared_norm
 
 
-def add_squared_norms_of_each_entry(data_dict: Dict[str, jax.Array]):
-    with jax.default_device(jax.devices("cpu")[0]):
+def add_squared_norms_of_each_entry(data_dict: Dict[str, jax_Array]):
+    with jax_default_device(jax_devices("cpu")[0]):
         data_dict |= {
             f"{data_key}_norms": cpu_vectorized_squared_norm(data)
             for data_key, data in data_dict.items()
@@ -51,7 +53,7 @@ def load_reduced_training_validation_and_testing_data(
     for key, val in training_data_dict.items():
         print(key, val.shape)
     # Load validation data onto CPU; truncate if N_VAL is less than 2500
-    with jax.default_device(jax.devices("cpu")[0]):
+    with jax_default_device(jax_devices("cpu")[0]):
         if N_VAL > 0:
             if N_VAL < 2500:
                 cpu_validation_data_dict = {
