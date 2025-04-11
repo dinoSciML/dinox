@@ -6,8 +6,14 @@ from typing import Any, Dict, List
 import equinox as eqx
 import jax
 import jax.random as jr
-from pydantic import (BaseModel, ConfigDict, field_serializer, field_validator,
-                      model_serializer, model_validator)
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    field_serializer,
+    field_validator,
+    model_serializer,
+    model_validator,
+)
 
 
 # equinox_nn_factories
@@ -81,9 +87,7 @@ def _truncated_normal_initializer(weight: jax.Array, key: jr.PRNGKey) -> jax.Arr
     """
     out_dim, in_dim = weight.shape
     stddev = math.sqrt(1 / in_dim)
-    return stddev * jax.random.truncated_normal(
-        key, shape=(out_dim, in_dim), lower=-2, upper=2
-    )
+    return stddev * jax.random.truncated_normal(key, shape=(out_dim, in_dim), lower=-2, upper=2)
 
 
 def _get_nn_weights(model: eqx.Module) -> List[jax.Array]:
@@ -91,11 +95,7 @@ def _get_nn_weights(model: eqx.Module) -> List[jax.Array]:
     Retrieve the weight matrices from all linear layers in the model.
     """
     is_linear = lambda x: isinstance(x, eqx.nn.Linear)
-    return [
-        x.weight
-        for x in jax.tree_util.tree_leaves(model, is_leaf=is_linear)
-        if is_linear(x)
-    ]
+    return [x.weight for x in jax.tree_util.tree_leaves(model, is_leaf=is_linear) if is_linear(x)]
 
 
 def _init_linear_layer_weights(model: eqx.Module, key: jr.PRNGKey) -> eqx.Module:
@@ -106,10 +106,7 @@ def _init_linear_layer_weights(model: eqx.Module, key: jr.PRNGKey) -> eqx.Module
     """
     weights = _get_nn_weights(model)
     subkeys = jr.split(key, len(weights))
-    new_weights = [
-        _truncated_normal_initializer(w, sk) for w, sk in zip(weights, subkeys)
-    ]
-    # Update the model’s weights in place
+    new_weights = [_truncated_normal_initializer(w, sk) for w, sk in zip(weights, subkeys)]
     new_model = eqx.tree_at(_get_nn_weights, model, new_weights)
     return new_model
 
@@ -155,14 +152,10 @@ class EquinoxMLPWrapper(BaseModel, validate_assignment=False):
 
         if values.get("load_from_file"):
             print("Loading eqx MLP from file")
-            eqx_nn = build_equinox_MLP_from_config_and_load_weights(
-                eqx_config=eqx_config, eqx_path=values["path"]
-            )
+            eqx_nn = build_equinox_MLP_from_config_and_load_weights(eqx_config=eqx_config, eqx_path=values["path"])
         else:
             print("Building new eqx MLP from scratch")
             eqx_nn = build_equinox_MLP_from_config(eqx_config=eqx_config)
-            eqx_nn = _init_linear_layer_weights(
-                eqx_nn, eqx_config.random_initializer_key
-            )
+            eqx_nn = _init_linear_layer_weights(eqx_nn, eqx_config.random_initializer_key)
         values["params"], values["static"] = partion_eqx_nn_by_trainability(eqx_nn)
         return values

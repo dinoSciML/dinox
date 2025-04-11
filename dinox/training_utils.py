@@ -13,12 +13,17 @@ from jax import Array as jax_Array
 from jax import device_put as jax_device_put
 from jax.tree_util import PyTreeDef
 
-from .data_utilities import (check_batch_size_validity,
-                             load_reduced_training_validation_and_testing_data)
+from .data_loading import (
+    check_batch_size_validity,
+    load_encoded_training_validation_and_testing_data,
+)
 from .equinox_nn_factories import EquinoxMLPWrapper
-from .losses import (cpu_compute_bochner_relative_errors,
-                     vectorized_grad_H1_Bochner_loss,
-                     vectorized_grad_L2_Bochner_loss)
+from .losses import (
+    cpu_compute_bochner_relative_errors,
+    compute_bochner_relative_errors,
+    vectorized_grad_H1_Bochner_loss,
+    vectorized_grad_L2_Bochner_loss,
+)
 
 
 def create_permuter(N: int, cp_random_seed: int = None) -> Callable:
@@ -61,9 +66,7 @@ def create_slicer(*, batch_size: int, num_input_outputs: int) -> Callable:
     if num_input_outputs == 2:
 
         @filter_jit
-        def slice_data(
-            X: jax_Array, out_1: jax_Array, end_idx: int
-        ) -> Tuple[int, jax_Array, jax_Array, jax_Array]:
+        def slice_data(X: jax_Array, out_1: jax_Array, end_idx: int) -> Tuple[int, jax_Array, jax_Array, jax_Array]:
             """
             Slices X and out_1 from end_idx for batch_size items.
 
@@ -100,9 +103,7 @@ def create_slicer(*, batch_size: int, num_input_outputs: int) -> Callable:
 
 def create_optax_optimization_stepper(
     *,
-    LOSS_NAME: Literal[
-        "L2", "H1"
-    ],  # "score", "hybrid", "h1hybrid", "meanVar", "meanEnt", "fisher",
+    LOSS_NAME: Literal["L2", "H1"],  # "score", "hybrid", "h1hybrid", "meanVar", "meanEnt", "fisher",
     nn: eqxModule,
     OPTAX_OPTIMIZER_NAME: str,
     learning_rate: float | optax.Schedule,
@@ -130,15 +131,11 @@ def create_optax_optimization_stepper(
     if gradient is None:
         raise Exception(f"LOSS_NAME={LOSS_NAME} is not currently implemented")
 
-    optimizer = optax.__getattribute__(OPTAX_OPTIMIZER_NAME)(
-        learning_rate=learning_rate
-    )
+    optimizer = optax.__getattribute__(OPTAX_OPTIMIZER_NAME)(learning_rate=learning_rate)
     optimizer_state = optimizer.init(eqx_filter(nn, eqx_is_inexact_array))
 
     flat_nn, treedef_nn = jax.tree_util.tree_flatten(nn)
-    flat_optimizer_state, treedef_optimizer_state = jax.tree_util.tree_flatten(
-        optimizer_state
-    )
+    flat_optimizer_state, treedef_optimizer_state = jax.tree_util.tree_flatten(optimizer_state)
     if LOSS_NAME == "L2":
 
         @filter_jit
@@ -151,9 +148,7 @@ def create_optax_optimization_stepper(
             nn = jax.tree_util.tree_unflatten(treedef_nn, flat_nn)
             updates, new_optimizer_state = optimizer.update(
                 gradient(nn, X, Y),
-                jax.tree_util.tree_unflatten(
-                    treedef_optimizer_state, flat_optimizer_state
-                ),
+                jax.tree_util.tree_unflatten(treedef_optimizer_state, flat_optimizer_state),
                 nn,
             )
             new_flat_nn = jax.tree_util.tree_leaves(eqx_apply_updates(nn, updates))
@@ -173,9 +168,7 @@ def create_optax_optimization_stepper(
             nn = jax.tree_util.tree_unflatten(treedef_nn, flat_nn)
             updates, new_optimizer_state = optimizer.update(
                 gradient(nn, X, Y, dYdX),
-                jax.tree_util.tree_unflatten(
-                    treedef_optimizer_state, flat_optimizer_state
-                ),
+                jax.tree_util.tree_unflatten(treedef_optimizer_state, flat_optimizer_state),
                 nn,
             )
             new_flat_nn = jax.tree_util.tree_leaves(eqx_apply_updates(nn, updates))
@@ -247,7 +240,7 @@ def load_encoded_data_train_and_test_dino(
         "encoded_output": "fX",
         "encoded_Jacobians": "dfXdX",
     }
-    train_val_test = load_reduced_training_validation_and_testing_data(
+    train_val_test = load_encoded_training_validation_and_testing_data(
         REDUCED_DIMS=REDUCED_DIMS,
         data_keys=data_keys,
         renaming_dict=renaming_dict,
@@ -281,34 +274,25 @@ def train_and_test_dino(
 ) -> Tuple[eqxModule, Dict[str, Any]]:
     # Place on GPU!
 
-    if not all(
-        list(arr.devices())[0].platform == "gpu"
-        for arr in train_val_test["train"].values()
-    ):
+    if not all(list(arr.devices())[0].platform == "gpu" for arr in train_val_test["train"].values()):
         print("Training data did not yet reside on GPU. Placing on GPU.")
-        training_data = tuple(
-            jax_device_put(train_val_test["train"][k]) for k in ("X", "fX", "dfXdX")
-        )
+        training_data = tuple(jax_device_put(train_val_test["train"][k]) for k in ("X", "fX", "dfXdX"))
     else:
         training_data = tuple(train_val_test["train"][k] for k in ("X", "fX", "dfXdX"))
 
-    cpu_testing_data_dict = train_val_test["test"]
-    cpu_validation_data_dict = train_val_test.get("val")
-    if cpu_validation_data_dict is not None:
+    cpu_test_data = train_val_test["test"]
+    val_data = train_val_test.get("val")
+    if val_data is not None:
         assert all(
-            list(arr.devices())[0].platform != "gpu"
-            for arr in cpu_validation_data_dict.values()
+            list(arr.devices())[0].platform != "gpu" for arr in val_data.values()
         ), "All arrays in train_val_test['val'] should be on the CPU!"
     assert all(
-        list(arr.devices())[0].platform != "gpu"
-        for arr in cpu_testing_data_dict.values()
+        list(arr.devices())[0].platform != "gpu" for arr in cpu_test_data.values()
     ), "All arrays in train_val_test['test'] should be on the CPU!"
 
     # Prepare for training
     N_TRAIN = training_data[0].shape[0]
-    n_train_batches = check_batch_size_validity(
-        data_iterable=training_data, batch_size=BATCH_SIZE
-    )
+    n_train_batches = check_batch_size_validity(data_iterable=training_data, batch_size=BATCH_SIZE)
     batches_arange = jnp.arange(n_train_batches)
     N_MAX_OUTER_ITERS = N_MAX_EPOCHS // N_EPOCHS_BETWEEN_TEST
 
@@ -351,34 +335,24 @@ def train_and_test_dino(
         total_epoch_time += time.time() - start
 
         # evaluate validation error
-        if cpu_validation_data_dict:
+        if val_data:
             print("computing validation errors")
             start = time.time()
-            validation_errors = cpu_compute_bochner_relative_errors(
+            validation_errors = compute_bochner_relative_errors(
                 jax.tree_util.tree_unflatten(nn_treedef, nn),
-                *(
-                    cpu_validation_data_dict[key]
-                    for key in ("X", "fX", "dfXdX", "fX_norms", "dfXdX_norms")
-                ),
+                *(val_data[key] for key in ("X", "fX", "dfXdX", "fX_norms", "dfXdX_norms")),
             )
             total_validation_time += time.time() - start
             print(validation_errors)
             # break if validation_loss is not decreasing
     validations["total_validation_time"] = total_validation_time
     # Testing error
-    nn_pytree = jax.tree_util.tree_unflatten(
-        nn_treedef, nn
-    )  # is it on GPU or CPU right now?
+    nn_pytree = jax.tree_util.tree_unflatten(nn_treedef, nn)  # is it on GPU or CPU right now?
 
     results["test_errors"] = cpu_compute_bochner_relative_errors(
         nn_pytree,
-        *(
-            cpu_testing_data_dict[key]
-            for key in ("X", "fX", "dfXdX", "fX_norms", "dfXdX_norms")
-        ),
+        *(cpu_test_data[key] for key in ("X", "fX", "dfXdX", "fX_norms", "dfXdX_norms")),
     )
     results["total_training_time"] = total_epoch_time
-    results["total_training_time_minus_validation"] = (
-        total_epoch_time - total_validation_time
-    )
+    results["total_training_time_minus_validation"] = total_epoch_time - total_validation_time
     return nn_pytree, results
