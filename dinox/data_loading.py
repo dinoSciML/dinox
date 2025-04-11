@@ -3,14 +3,15 @@ from typing import Dict, Iterable, Tuple
 
 import hickle
 import jax.numpy as jnp
+import numpy as np
 from jax import Array as jax_Array
 from jax import default_device as jax_default_device
-from jax import devices as jax_devices
 from jax import device_put
+from jax import devices as jax_devices
 from jax.tree_util import tree_map
 from jaxtyping import PyTree
 from numpy.typing import ArrayLike
-import numpy as np
+
 from .losses import cpu_vectorized_squared_norm, vectorized_squared_norm
 
 

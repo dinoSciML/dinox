@@ -6,14 +6,8 @@ from typing import Any, Dict, List
 import equinox as eqx
 import jax
 import jax.random as jr
-from pydantic import (
-    BaseModel,
-    ConfigDict,
-    field_serializer,
-    field_validator,
-    model_serializer,
-    model_validator,
-)
+from pydantic import (BaseModel, ConfigDict, field_serializer, field_validator,
+                      model_serializer, model_validator)
 
 
 # equinox_nn_factories

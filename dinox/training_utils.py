@@ -13,17 +13,13 @@ from jax import Array as jax_Array
 from jax import device_put as jax_device_put
 from jax.tree_util import PyTreeDef
 
-from .data_loading import (
-    check_batch_size_validity,
-    load_encoded_training_validation_and_testing_data,
-)
+from .data_loading import (check_batch_size_validity,
+                           load_encoded_training_validation_and_testing_data)
 from .equinox_nn_factories import EquinoxMLPWrapper
-from .losses import (
-    cpu_compute_bochner_relative_errors,
-    compute_bochner_relative_errors,
-    vectorized_grad_H1_Bochner_loss,
-    vectorized_grad_L2_Bochner_loss,
-)
+from .losses import (compute_bochner_relative_errors,
+                     cpu_compute_bochner_relative_errors,
+                     vectorized_grad_H1_Bochner_loss,
+                     vectorized_grad_L2_Bochner_loss)
 
 
 def create_permuter(N: int, cp_random_seed: int = None) -> Callable:
