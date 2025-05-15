@@ -6,8 +6,8 @@ from typing import Any, Dict, List
 import equinox as eqx
 import jax
 import jax.random as jr
-from pydantic import (BaseModel, ConfigDict, field_serializer, field_validator,
-                      model_serializer, model_validator)
+from equinox import Module as eqxModule
+from pydantic import BaseModel, ConfigDict, field_serializer, field_validator, model_serializer, model_validator
 
 
 # equinox_nn_factories
@@ -34,7 +34,7 @@ class EquinoxMLPConfig(BaseModel, validate_assignment=True):
         return jr.PRNGKey(key_int)
 
 
-def build_equinox_MLP_from_config(eqx_config: EquinoxMLPConfig) -> eqx.Module:
+def build_equinox_MLP_from_config(eqx_config: EquinoxMLPConfig) -> eqxModule:
     """
     Build an Equinox MLP from the provided configuration.
     """
@@ -50,9 +50,7 @@ def build_equinox_MLP_from_config(eqx_config: EquinoxMLPConfig) -> eqx.Module:
     )
 
 
-def build_equinox_MLP_from_config_and_load_weights(
-    *, eqx_path: Path, eqx_config: EquinoxMLPConfig = None
-) -> eqx.Module:
+def build_equinox_MLP_from_config_and_load_weights(*, eqx_path: Path, eqx_config: EquinoxMLPConfig = None) -> eqxModule:
     """
     Build an Equinox MLP from the configuration (or load it from disk if not provided)
     and then load its weights from file.
@@ -65,7 +63,7 @@ def build_equinox_MLP_from_config_and_load_weights(
     return eqx.tree_deserialise_leaves(Path(eqx_path, "weights.eqx"), mlp)
 
 
-def partion_eqx_nn_by_trainability(eqx_nn: eqx.Module):
+def partion_eqx_nn_by_trainability(eqx_nn: eqxModule):
     """
     Partition eqx Module parameters into trainable and non-trainable groups.
     """
@@ -84,7 +82,7 @@ def _truncated_normal_initializer(weight: jax.Array, key: jr.PRNGKey) -> jax.Arr
     return stddev * jax.random.truncated_normal(key, shape=(out_dim, in_dim), lower=-2, upper=2)
 
 
-def _get_nn_weights(model: eqx.Module) -> List[jax.Array]:
+def _get_nn_weights(model: eqxModule) -> List[jax.Array]:
     """
     Retrieve the weight matrices from all linear layers in the model.
     """
@@ -92,7 +90,7 @@ def _get_nn_weights(model: eqx.Module) -> List[jax.Array]:
     return [x.weight for x in jax.tree_util.tree_leaves(model, is_leaf=is_linear) if is_linear(x)]
 
 
-def _init_linear_layer_weights(model: eqx.Module, key: jr.PRNGKey) -> eqx.Module:
+def _init_linear_layer_weights(model: eqxModule, key: jr.PRNGKey) -> eqxModule:
     """
     Reinitialize all linear layers in the model with a truncated normal initializer.
 

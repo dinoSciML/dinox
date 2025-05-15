@@ -1,17 +1,55 @@
-[tool.poetry]
+[build-system]
+requires = ["uv_build>=0.5.0"]
+build-backend = "uv_build"
+
+[project]
 name = "dinox"
-version = "0.1.0"
+version = "0.4.0"
 description = "Derivative Informed Neural Operators in JAX"
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.8"
 authors = [
-    "Joshua Chen <joshuawchen@icloud.com>",
-    "Tom O'Leary Roseberry <tom.olearyroseberry@utexas.edu>"
+  { name = "Joshua Chen", email = "joshuawchen@icloud.com" },
+  { name = "Michael Brennan", email = "mcbrenn@mit.edu" },
+  { name = "Thomas O'Leary-Roseberry", email = "tom.olearyroseberry@utexas.edu" }
 ]
-license = "GNU Lesser General Public License"
+dependencies = [
+    "jax",
+    "jaxlib",
+    "jaxtyping",
+    "bayesflux>=0.5.0",
+    "equinox",
+    "hickle"
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "black",
+    "isort",
+    "flake8",
+    "flake8-pyproject"
+]
+cupy = [
+    "cupy-cuda117>=10.0.0,<11.0.0",  # If your system uses CUDA 11.7; for others use e.g., cupy-cuda115, cupy-cuda118, etc.
+    # bayesflux: for probabilistic computations or Bayesian 
+]
+
+[tool.black]
+line-length = 120
+
+[tool.flake8]
+max-line-length = 120
+
+[project.urls]
+Homepage = "https://github.com/joshuawchen/BayesFlux"
+Repository = "https://github.com/joshuawchen/BayesFlux"
+
+[tool.uv_build]
+src_dir = "src"
+
 readme = "README.md"
 
 [tool.poetry.dependencies]
 python = "^3.9"
-
-[build-system]
-requires = ["poetry-core"]
-build-backend = "poetry.core.masonry.api"

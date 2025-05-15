@@ -1,10 +1,9 @@
 import time
-from typing import Any, Callable, Dict, Iterable, Literal, Tuple
+from typing import Any, Callable, Dict, Iterable, Literal, Tuple, Union
 
 import jax.numpy as jnp
 import jax.tree_util
 import optax
-from equinox import Module as eqxModule
 from equinox import apply_updates as eqx_apply_updates
 from equinox import filter as eqx_filter
 from equinox import filter_jit
@@ -13,16 +12,22 @@ from jax import Array as jax_Array
 from jax import device_put as jax_device_put
 from jax.tree_util import PyTreeDef
 
-from .data_loading import (check_batch_size_validity,
-                           load_encoded_training_validation_and_testing_data)
-from .equinox_nn_factories import EquinoxMLPWrapper
-from .losses import (compute_bochner_relative_errors,
-                     cpu_compute_bochner_relative_errors,
-                     vectorized_grad_H1_Bochner_loss,
-                     vectorized_grad_L2_Bochner_loss)
+from .data_loading import Path, check_batch_size_validity, load_encoded_training_validation_and_testing_data
+from .equinox_nn_factories import EquinoxMLPWrapper, eqxModule
+from .losses import (
+    compute_H1_bochner_relative_errors,
+    compute_L2_bochner_relative_errors,
+    cpu_compute_H1_bochner_relative_errors,
+    vectorized_grad_H1_Bochner_loss,
+    vectorized_grad_L2_Bochner_loss,
+)
 
 
-def create_permuter(N: int, cp_random_seed: int = None) -> Callable:
+def __add_norm_keys(data_keys: Tuple[str, ...]) -> Tuple[str, ...]:
+    return data_keys + tuple(f"{data_key}_norms" for data_key in data_keys if data_key != "X")
+
+
+def __create_permuter(N: int, cp_random_seed: int = None) -> Callable:
     """
     Creates a callable to permute JAX arrays using permutation indices from CuPy.
 
@@ -53,7 +58,7 @@ def create_permuter(N: int, cp_random_seed: int = None) -> Callable:
     return permute_arrays
 
 
-def create_slicer(*, batch_size: int, num_input_outputs: int) -> Callable:
+def __create_slicer(*, batch_size: int, num_input_outputs: int) -> Callable:
     """
     Returns a slicing function that extracts a batch from each array using a fixed batch_size and start index.
     """
@@ -97,12 +102,12 @@ def create_slicer(*, batch_size: int, num_input_outputs: int) -> Callable:
     return slice_data
 
 
-def create_optax_optimization_stepper(
+def __create_optax_optimization_stepper(
     *,
     LOSS_NAME: Literal["L2", "H1"],  # "score", "hybrid", "h1hybrid", "meanVar", "meanEnt", "fisher",
     nn: eqxModule,
     OPTAX_OPTIMIZER_NAME: str,
-    learning_rate: float | optax.Schedule,
+    learning_rate: Union[float, optax.Schedule],
 ) -> Tuple[Callable, optax.OptState, PyTreeDef, eqxModule]:
     """
     Creates a jitted optimization stepper for a neural network using an Optax optimizer.
@@ -174,16 +179,13 @@ def create_optax_optimization_stepper(
     return (take_step, flat_optimizer_state, flat_nn, treedef_nn)
 
 
-def n_epochs(
+def __create_epochs_fn(
     *,
     stepper: Callable[..., Tuple[optax.OptState, eqxModule]],
     slicer: Callable,
-    nn: eqxModule,
-    optimizer_state: optax.OptState,
     random_permuter: Callable[..., Tuple[jnp.ndarray, ...]],
     batches_arange: jnp.ndarray,
     epochs_arange: jnp.ndarray,
-    training_data: Tuple[jnp.ndarray, ...],
 ) -> Tuple[optax.OptState, eqxModule]:
     """
     Executes a training loop over epochs using batched and permuted training data.
@@ -201,16 +203,21 @@ def n_epochs(
     Returns:
         Tuple[optax.OptState, eqxModule]: The final optimizer state and the trained model.
     """
-    for _ in epochs_arange:
-        X, *other_data = random_permuter(*training_data)
-        end_idx = 0
-        for j in batches_arange:
-            end_idx, X_batch, *other_data = slicer(X, *other_data, end_idx)
-            optimizer_state, nn = stepper(optimizer_state, nn, X_batch, *other_data)
-    return optimizer_state, nn
+
+    def epochs_fn(optimizer_state, nn, training_data):
+        for _ in epochs_arange:
+            X, *other_data = random_permuter(*training_data)
+            end_idx = 0
+            for j in batches_arange:
+                end_idx, X_batch, *other_data = slicer(X, *other_data, end_idx)
+                optimizer_state, nn = stepper(optimizer_state, nn, X_batch, *other_data)
+        return optimizer_state, nn
+
+    return epochs_fn
 
 
 def load_encoded_data_train_and_test_dino(
+    data_path: Path,
     eqx_wrapper: EquinoxMLPWrapper,
     N_MAX_EPOCHS: int,
     STEP_SIZE: float,
@@ -222,23 +229,21 @@ def load_encoded_data_train_and_test_dino(
     RANDOM_PERMUTATIONS_SEED: int,
     N_VAL: int = 2500,
 ) -> Tuple[EquinoxMLPWrapper, Dict[str, Any]]:
-    print("Setting up training problem...")
-    data_keys = {  # harded coded
-        "L2": ("encoded_inputs", "encoded_output"),
-        "H1": ("encoded_inputs", "encoded_output", "encoded_Jacobians"),
+    training_data_keys = {  # harded coded
+        "L2": ("encoded_inputs", "encoded_outputs"),
+        "H1": ("encoded_inputs", "encoded_outputs", "encoded_Jacobians"),
     }.get(LOSS_NAME)
-    if data_keys is None:
+    if training_data_keys is None:
         raise Exception("Not currently implemented")
-    else:
-        print("Chosen loss:", LOSS_NAME)
     renaming_dict = {
         "encoded_inputs": "X",
-        "encoded_output": "fX",
+        "encoded_outputs": "fX",
         "encoded_Jacobians": "dfXdX",
     }
     train_val_test = load_encoded_training_validation_and_testing_data(
+        data_path=data_path,
         REDUCED_DIMS=REDUCED_DIMS,
-        data_keys=data_keys,
+        training_data_keys=training_data_keys,
         renaming_dict=renaming_dict,
         N_TRAIN=N_TRAIN,
         N_VAL=N_VAL,
@@ -251,6 +256,7 @@ def load_encoded_data_train_and_test_dino(
         train_val_test=train_val_test,
         OPTAX_OPTIMIZER_NAME=OPTAX_OPTIMIZER_NAME,
         RANDOM_PERMUTATIONS_SEED=RANDOM_PERMUTATIONS_SEED,
+        training_data_keys=("X", "fX", "dfXdX") if LOSS_NAME == "H1" else ("X", "fX"),
         LOSS_NAME=LOSS_NAME,
     )
     eqx_wrapper.params = nn  # is this right?
@@ -262,26 +268,28 @@ def train_and_test_dino(
     N_MAX_EPOCHS: int,
     STEP_SIZE: float,
     BATCH_SIZE: int,
-    train_val_test: dict,
+    train_val_test: dict,  # test has to have Jacobians, 'dfXdX' in them!!!
     N_EPOCHS_BETWEEN_TEST: int = 200,
     OPTAX_OPTIMIZER_NAME: str = "adam",
-    RANDOM_PERMUTATIONS_SEED: int = 0,  # val and test have to have Jacobians in them!!!
+    RANDOM_PERMUTATIONS_SEED: int = 0,
+    training_data_keys: Tuple[str, ...] = ("X", "fX", "dfXdX"),
+    testing_data_keys: Tuple[str, ...] = ("X", "fX", "dfXdX"),
     LOSS_NAME: str = "H1",
 ) -> Tuple[eqxModule, Dict[str, Any]]:
     # Place on GPU!
 
     if not all(list(arr.devices())[0].platform == "gpu" for arr in train_val_test["train"].values()):
         print("Training data did not yet reside on GPU. Placing on GPU.")
-        training_data = tuple(jax_device_put(train_val_test["train"][k]) for k in ("X", "fX", "dfXdX"))
+        training_data = tuple(jax_device_put(train_val_test["train"][k]) for k in training_data_keys)
     else:
-        training_data = tuple(train_val_test["train"][k] for k in ("X", "fX", "dfXdX"))
+        training_data = tuple(train_val_test["train"][k] for k in training_data_keys)
 
     cpu_test_data = train_val_test["test"]
     val_data = train_val_test.get("val")
     if val_data is not None:
         assert all(
-            list(arr.devices())[0].platform != "gpu" for arr in val_data.values()
-        ), "All arrays in train_val_test['val'] should be on the CPU!"
+            list(arr.devices())[0].platform == "gpu" for arr in val_data.values()
+        ), "All arrays in train_val_test['val'] should be on the GPU!"
     assert all(
         list(arr.devices())[0].platform != "gpu" for arr in cpu_test_data.values()
     ), "All arrays in train_val_test['test'] should be on the CPU!"
@@ -289,10 +297,10 @@ def train_and_test_dino(
     # Prepare for training
     N_TRAIN = training_data[0].shape[0]
     n_train_batches = check_batch_size_validity(data_iterable=training_data, batch_size=BATCH_SIZE)
-    batches_arange = jnp.arange(n_train_batches)
+    # batches_arange = jnp.arange(n_train_batches)
     N_MAX_OUTER_ITERS = N_MAX_EPOCHS // N_EPOCHS_BETWEEN_TEST
 
-    epochs_arange = jnp.arange(N_EPOCHS_BETWEEN_TEST)
+    # epochs_arange = jnp.arange(N_EPOCHS_BETWEEN_TEST)
     num_train_steps = N_MAX_EPOCHS * n_train_batches
     lr_schedule = optax.piecewise_constant_schedule(
         init_value=STEP_SIZE,
@@ -301,32 +309,47 @@ def train_and_test_dino(
         },
     )
 
-    slicer = create_slicer(batch_size=BATCH_SIZE, num_input_outputs=len(training_data))
-    random_permuter = create_permuter(N_TRAIN, RANDOM_PERMUTATIONS_SEED)
-    stepper, optimizer_state, nn, nn_treedef = create_optax_optimization_stepper(
+    slicer = __create_slicer(batch_size=BATCH_SIZE, num_input_outputs=len(training_data))
+    random_permuter = __create_permuter(N_TRAIN, RANDOM_PERMUTATIONS_SEED)
+    stepper, optimizer_state, nn, nn_treedef = __create_optax_optimization_stepper(
         LOSS_NAME=LOSS_NAME,
         nn=nn,
         OPTAX_OPTIMIZER_NAME=OPTAX_OPTIMIZER_NAME,
         learning_rate=lr_schedule,
     )
+    n_epochs = __create_epochs_fn(
+        slicer=slicer,
+        random_permuter=random_permuter,
+        stepper=stepper,
+        batches_arange=jnp.arange(n_train_batches),
+        epochs_arange=jnp.arange(N_EPOCHS_BETWEEN_TEST),
+    )
 
+    compute_relative_errs = {  # harded coded
+        "L2": compute_L2_bochner_relative_errors,
+        "H1": compute_H1_bochner_relative_errors,
+    }.get(LOSS_NAME)
     print("Started training...")
 
     total_epoch_time = 0.0
     total_validation_time = 0.0
     validations = dict()
     results = dict()
+    val_data_rel_errors_keys = __add_norm_keys(training_data_keys)
+    test_data_rel_errors_keys = __add_norm_keys(testing_data_keys)
+
     for outer_iter in range(N_MAX_OUTER_ITERS):
         start = time.time()
         optimizer_state, nn = n_epochs(
-            slicer=slicer,
-            random_permuter=random_permuter,
-            training_data=training_data,
-            stepper=stepper,
-            optimizer_state=optimizer_state,
-            nn=nn,
-            batches_arange=batches_arange,
-            epochs_arange=epochs_arange,
+            # slicer=slicer,
+            # random_permuter=random_permuter,
+            # training_data=training_data,
+            # stepper=stepper,
+            optimizer_state,
+            nn,
+            training_data,
+            # batches_arange=batches_arange,
+            # epochs_arange=epochs_arange,
         )
         total_epoch_time += time.time() - start
 
@@ -334,9 +357,9 @@ def train_and_test_dino(
         if val_data:
             print("computing validation errors")
             start = time.time()
-            validation_errors = compute_bochner_relative_errors(
+            validation_errors = compute_relative_errs(
                 jax.tree_util.tree_unflatten(nn_treedef, nn),
-                *(val_data[key] for key in ("X", "fX", "dfXdX", "fX_norms", "dfXdX_norms")),
+                *(val_data[key] for key in val_data_rel_errors_keys),
             )
             total_validation_time += time.time() - start
             print(validation_errors)
@@ -345,9 +368,9 @@ def train_and_test_dino(
     # Testing error
     nn_pytree = jax.tree_util.tree_unflatten(nn_treedef, nn)  # is it on GPU or CPU right now?
 
-    results["test_errors"] = cpu_compute_bochner_relative_errors(
+    results["test_errors"] = cpu_compute_H1_bochner_relative_errors(
         nn_pytree,
-        *(cpu_test_data[key] for key in ("X", "fX", "dfXdX", "fX_norms", "dfXdX_norms")),
+        *(cpu_test_data[key] for key in test_data_rel_errors_keys),
     )
     results["total_training_time"] = total_epoch_time
     results["total_training_time_minus_validation"] = total_epoch_time - total_validation_time

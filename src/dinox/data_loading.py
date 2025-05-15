@@ -6,7 +6,7 @@ import jax.numpy as jnp
 import numpy as np
 from jax import Array as jax_Array
 from jax import default_device as jax_default_device
-from jax import device_put
+from jax import device_get, device_put
 from jax import devices as jax_devices
 from jax.tree_util import tree_map
 from jaxtyping import PyTree
@@ -34,27 +34,30 @@ def device_put_pytree(pytree: PyTree) -> PyTree:
 
 
 def device_get_pytree(pytree: PyTree) -> PyTree:
-    return tree_map(device_put, pytree)
+    return tree_map(device_get, pytree)
 
 
 def add_squared_norms_of_each_entry(
     data_dict: Dict[str, jax_Array],
 ) -> Dict[str, jax_Array]:
-    device = data_dict.popitem()[1].device()
+    device = data_dict[list(data_dict.keys())[0]].device()
     if device in jax_devices("cpu"):
         norm_func = cpu_vectorized_squared_norm
     else:
         norm_func = vectorized_squared_norm
-    with jax_default_device(device):
-        data_dict |= {f"{data_key}_norms": norm_func(data) for data_key, data in data_dict.items() if data_key != "X"}
+    for data_key in list(data_dict.keys()):
+        if data_key != "X":
+            data_dict[f"{data_key}_norms"] = norm_func(data_dict[data_key])
     return data_dict
 
 
 def load_encoded_training_validation_and_testing_data(
+    data_path: Path,
     REDUCED_DIMS: Tuple[int, int],
-    data_keys: Iterable[str],
+    training_data_keys: Iterable[str],
     renaming_dict: Dict[str, str],
     N_TRAIN: int,
+    test_data_keys: Iterable[str] = ("encoded_inputs", "encoded_outputs", "encoded_Jacobians"),
     N_VAL: int = 2500,
     N_TEST: int = 25_000,
 ) -> Dict[str, Dict[str, ArrayLike]]:
@@ -72,40 +75,42 @@ def load_encoded_training_validation_and_testing_data(
             - "training data": Maps each key to its training array.
             - "testing data": Maps each key to its testing array and includes computed norms (keyed as "{data_key}_norms").
     """
-    # Load training data onto GPU
+    # Load training data onto GPU-- useful only if training data saved to "training/f"{REDUCED_DIMS}_{data_key}_{N_TRAIN}.npy"
     train_data = {
-        renaming_dict[data_key]: jnp.load(f"{REDUCED_DIMS}_training_{data_key}_{N_TRAIN}.npy")[:40]  # training_
-        for data_key in data_keys
+        renaming_dict[data_key]: jnp.load(Path(data_path, "training", f"{REDUCED_DIMS}_{data_key}_{N_TRAIN}.npy"))
+        for data_key in training_data_keys
     }
-    for key, val in train_data.items():
-        print(key, val.shape)
+    # print("Taking stock of training data:")
+    # for key, val in train_data.items():
+    #     print(f"\t{key}, shape: {val.shape}")
     # Load validation data onto GPU; truncate if N_VAL is less than 2500
     if N_VAL > 0:
         if N_VAL < 2500:
             val_data = {
-                renaming_dict[data_key]: jnp.load(f"validation_{REDUCED_DIMS}_{data_key}_{N_VAL}.npy")[:N_VAL]
-                for data_key in data_keys
+                renaming_dict[data_key]: jnp.load(Path(data_path, "validation", f"{REDUCED_DIMS}_{data_key}.npy"))[
+                    :N_VAL
+                ]
+                for data_key in training_data_keys
             }
         else:
             val_data = {
-                renaming_dict[data_key]: jnp.load(f"{REDUCED_DIMS}_training_{data_key}_50.npy")
-                for data_key in data_keys
+                renaming_dict[data_key]: jnp.load(Path(data_path, "validation", f"{REDUCED_DIMS}_{data_key}.npy"))
+                for data_key in training_data_keys
             }
 
     # Load testing data onto CPU; truncate if N_TEST is less than 25000
+    # by default includes encoded_Jacobians, since we want to test the accuracy of Jacobians even when training without them
     with jax_default_device(jax_devices("cpu")[0]):
         if N_TEST < 25_000:
             cpu_test_data = {
-                renaming_dict[data_key]: jnp.load(f"testing_{REDUCED_DIMS}_{data_key}_25000.npy")[:N_TEST]
-                for data_key in data_keys
+                renaming_dict[data_key]: jnp.load(Path(data_path, "testing", f"{REDUCED_DIMS}_{data_key}.npy"))[:N_TEST]
+                for data_key in test_data_keys
             }
         else:
             cpu_test_data = {
-                renaming_dict[data_key]: jnp.load(f"{REDUCED_DIMS}_training_{data_key}_{25000}.npy")  # _50000.npy')
-                for data_key in data_keys
+                renaming_dict[data_key]: jnp.load(Path(data_path, "testing", f"{REDUCED_DIMS}_{data_key}.npy"))
+                for data_key in test_data_keys
             }
-
-    print("Computing data norms for relative testing error calculations")
 
     # Compute squared L2 or Frobenius norms for each validation/testing data array and add to dictionaries.
     train_val_test = {
