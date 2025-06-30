@@ -5,9 +5,12 @@ from typing import Any, Dict, List
 
 import equinox as eqx
 import jax
+
+jax.config.update("jax_enable_x64", True)
 import jax.random as jr
 from equinox import Module as eqxModule
-from pydantic import BaseModel, ConfigDict, field_serializer, field_validator, model_serializer, model_validator
+from pydantic import (BaseModel, ConfigDict, field_serializer, field_validator,
+                      model_serializer, model_validator)
 
 
 # equinox_nn_factories
@@ -45,7 +48,7 @@ def build_equinox_MLP_from_config(eqx_config: EquinoxMLPConfig) -> eqxModule:
         out_size=eqx_config.output_dimension,
         width_size=eqx_config.layer_width,
         depth=eqx_config.depth,
-        activation=jax.jit(getattr(jax.nn, eqx_config.activation_name)),
+        activation=eqx.filter_jit(getattr(jax.nn, "gelu")),
         key=eqx_config.random_initializer_key,
     )
 
@@ -151,3 +154,20 @@ class EquinoxMLPWrapper(BaseModel, validate_assignment=False):
             eqx_nn = _init_linear_layer_weights(eqx_nn, eqx_config.random_initializer_key)
         values["params"], values["static"] = partion_eqx_nn_by_trainability(eqx_nn)
         return values
+
+
+from typing import Union
+
+
+def config_and_eqx_module(
+    *,
+    eqx_config: EquinoxMLPConfig,
+    eqx_nn: Union[eqx.Module, None] = None,
+    eqx_path: Union[Path, None] = None,
+):
+    if not isinstance(eqx_config, EquinoxMLPConfig):
+        eqx_config = EquinoxMLPConfig(**eqx_config.copy())
+    if not isinstance(eqx_nn, eqx.Module):
+        assert isinstance(eqx_path, Path)
+        eqx_nn = build_equinox_MLP_from_config_and_load_weights(eqx_config=eqx_config, eqx_path=eqx_path)
+    return eqx_config, eqx_nn

@@ -1,29 +1,27 @@
+import gc
 import time
 from operator import itemgetter
 from pathlib import Path
-from typing import Iterable, List, Literal, Tuple
+from typing import Iterable, List, Literal, Tuple, Union
 
-import jax
-import jax.numpy as jnp
 import numpy as np
-from bayesflux.encoding import encode_input_output_Jacobian_data
-from bayesflux.generation import (
-    GaussianInputOuputAndDerivativesSampler,
-    generate_full_Jacobian_data,
-    generate_output_data,
-    generate_reduced_training_data,
-)
-from bayesflux.subspace_detection import (
-    information_theoretic_dimension_reduction,
-    moment_based_dimension_reduction,
-)
+from bayesflux import (hippylib_sampler_from_model,
+                       multiprocess_generate_hippylib_full_Jacobian_data,
+                       multiprocess_generate_hippylib_output_data,
+                       multiprocess_generate_reduced_hippylib_training_data)
+from bayesflux.generation import (GaussianInputOuputAndDerivativesSampler,
+                                  generate_full_Jacobian_data,
+                                  generate_output_data,
+                                  generate_reduced_training_data)
+from jax.typing import ArrayLike as JAXArrayLike
 from numpy.typing import ArrayLike
 
-from .data_loading import device_get_pytree, dump_pytree_to_disk, load_pytree_from_disk
+from .data_loading import (device_get_pytree, dump_pytree_to_disk,
+                           load_pytree_from_disk)
 
 
 def __find_eigs_truncation_idxs(
-    lambda_seq: List[float], mu_seq: List[float], percentage: float, threshold: float = 1.0
+    lambda_seq: List[float], mu_seq: List[float], percentage: float, threshold: float = 100  # .0
 ) -> Tuple[int, int]:
     """
     Find indices at which to truncate ordered eigenvalue sequences to capture a given
@@ -57,6 +55,8 @@ def __find_eigs_truncation_idxs(
     # Filter eigenvalues below the threshold
     lambda_tail = [val for val in lambda_seq if val < threshold]
     mu_tail = [val for val in mu_seq if val < threshold]
+    rest_lambda = len(lambda_seq) - len(lambda_tail)
+    rest_mu = len(mu_seq) - len(mu_tail)
 
     # Calculate the total sum of eigenvalues in the tails
     total_tail_sum = sum(lambda_tail) + sum(mu_tail)
@@ -79,7 +79,10 @@ def __find_eigs_truncation_idxs(
         else:
             curr_sum += next_mu
             j += 1
-    return i, j
+    print("lambdas:", lambda_seq)
+    print("mu:", mu_seq)
+
+    return i + rest_lambda, j + rest_mu
 
 
 def generate_moment_based_encoder_decoders(
@@ -92,6 +95,8 @@ def generate_moment_based_encoder_decoders(
     input_dims: Iterable[int] = None,
     output_dims: Iterable[int] = None,  # only one of input_dims / output_dims should be provided
 ):
+    import jax
+
     if input_output_dim_percentage_pairs:
         max_input_dimension = input_covariance_matrix.shape[0]
         max_output_dimension = output_samples.shape[1]
@@ -108,6 +113,9 @@ def generate_moment_based_encoder_decoders(
         input_output_dim_pairs = [(None, output_dim) for output_dim in output_dims]
     else:
         raise Exception("No reduction dimensions provided!")
+
+    from bayesflux.subspace_detection import moment_based_dimension_reduction
+
     # Compute the input/output encodec given maximum truncation dimensions
     full_encodecs = moment_based_dimension_reduction(
         key=key,
@@ -117,6 +125,7 @@ def generate_moment_based_encoder_decoders(
         max_input_dimension=max_input_dimension,
         max_output_dimension=max_output_dimension,
     )
+
     if input_output_dim_percentage_pairs:
         input_output_dim_pairs = [
             __find_eigs_truncation_idxs(
@@ -132,7 +141,6 @@ def generate_moment_based_encoder_decoders(
             encodecs[(input_dim_r, output_dim_r)][k1] = dict()
             if dim_r is not None:
                 for k2 in ("eigenvalues", "encoder", "decoder"):
-                    # print("shape before subsetting", encodecs[(input_dim_r, output_dim_r)][k1][k2].shape)
                     encodecs[(input_dim_r, output_dim_r)][k1][k2] = full_encodecs[k1][k2].copy()[..., :dim_r]
                     print(k1, k2, "reduced dimension", dim_r)
                     print(encodecs[(input_dim_r, output_dim_r)][k1][k2].shape, "\n\n")
@@ -141,18 +149,22 @@ def generate_moment_based_encoder_decoders(
 
 def generate_derivative_informed_encoder_decoders_from_full_jacobians(
     key,
-    prior_precision,
-    noise_variance,
+    prior_precision: ArrayLike,
+    noise_precision: float,
     full_jacobian_data: ArrayLike,
     input_output_dim_percentage_pairs: Iterable[float] = None,
     input_output_dim_pairs: Iterable[Tuple[int, int]] = None,
     input_dims: Iterable[int] = None,
     output_dims: Iterable[int] = None,
-    # prior,
 ):
+    import jax
+    import jax.numpy as jnp
+
     if input_output_dim_percentage_pairs:
-        max_input_dimension = full_jacobian_data.shape[1]
-        max_output_dimension = full_jacobian_data.shape[2]
+        max_input_dimension = full_jacobian_data.shape[2]
+        max_output_dimension = full_jacobian_data.shape[1]
+        print("max input dim", max_input_dimension)
+        print("max output dim", max_output_dimension)
     elif input_output_dim_pairs:
         max_input_dimension = max(input_output_dim_pairs, key=itemgetter(0))[0]
         max_output_dimension = max(input_output_dim_pairs, key=itemgetter(1))[1]
@@ -167,11 +179,14 @@ def generate_derivative_informed_encoder_decoders_from_full_jacobians(
     else:
         raise Exception("No reduction dimensions provided!")
     print("max dimensions", max_input_dimension, max_output_dimension)
+    from bayesflux.subspace_detection import \
+        information_theoretic_dimension_reduction
+
     # Compute the input/output encodec given maximum truncation dimensions
     full_encodecs = information_theoretic_dimension_reduction(
         key=key,
         J_samples=jax.device_put(full_jacobian_data),
-        noise_variance=jax.device_put(noise_variance),
+        noise_precision=jax.device_put(noise_precision),
         prior_precision=jax.device_put(prior_precision),
         prior_covariance=jnp.linalg.inv(prior_precision),
         max_input_dimension=max_input_dimension,
@@ -184,6 +199,12 @@ def generate_derivative_informed_encoder_decoders_from_full_jacobians(
             )
             for percentage in input_output_dim_percentage_pairs
         ]
+        print("total input eigenvalues:", np.sum(full_encodecs["input"]["eigenvalues"]))
+        print("total output eigenvalues:", np.sum(full_encodecs["output"]["eigenvalues"]))
+
+        print("percentages:", input_output_dim_percentage_pairs)
+        print("dims:", input_output_dim_pairs)
+
         # hp_eigs_input, hp_input_encoder, hp_input_decoder = hippylib_active_subspace(full_jacobian_data, noise_variance, prior, 2145, 10)
 
         # eigs_input = encoder_decoders_dict['input']['eigenvalues']
@@ -230,14 +251,16 @@ def generate_derivative_informed_encoder_decoders_from_full_jacobians(
                     encodecs[(input_dim_r, output_dim_r)][k1][k2] = full_encodecs[k1][k2].copy()[..., :dim_r]
                     print(k1, k2, "reduced dimension", dim_r)
                     print(encodecs[(input_dim_r, output_dim_r)][k1][k2].shape, "\n\n")
+    del full_encodecs
     return encodecs  # needs to be saved to model's name
 
 
 def generate_latent_data_for_dino_training(
-    model_obj: GaussianInputOuputAndDerivativesSampler,  # noise_variance?
     N_trains: Iterable[int],
-    key: jax.Array,
+    key: Union[JAXArrayLike, int],
     dimension_reduction_type: Literal["derivative_informed", "moment_based"],
+    model_obj: GaussianInputOuputAndDerivativesSampler = None,
+    model_name: str = None,
     input_output_dim_percentage_pairs: Iterable[float] = None,
     input_output_dim_pairs: Iterable[Tuple[int, int]] = None,
     input_dims: Iterable[int] = None,
@@ -247,33 +270,54 @@ def generate_latent_data_for_dino_training(
     N_val: int = 2500,
     save_path: Path = None,
     reduce_input_before: bool = False,
+    N_multiprocessing: int = 1,
 ):
     N_train_max = max(N_trains)
-    N_reduced_samples = N_train_max + N_test + N_val  # + N_encodec_computation
+    N_reduced_samples = N_train_max + N_test + N_val
+    subspace_start = time.time()
     if dimension_reduction_type == "derivative_informed":
         print("Generating data for derivative informed subspace detection")
-        subspace_detect_data = generate_full_Jacobian_data(
-            sampler_wrapper=model_obj, N_samples=N_encodec_computation
-        )  # model_obj PRNG key??
-        # print("loaded_results",susbpace_detect_data)
-        # input_output_reduced_dim_percentage_pairs  = [0.999, 0.99,0.95,0.9 ] #(2145, 10), (2145,25)
+        if N_multiprocessing >= 1:
+            subspace_detect_data = multiprocess_generate_hippylib_full_Jacobian_data(
+                model_name=model_name,
+                N_samples=N_encodec_computation,
+                N_processes=N_multiprocessing,
+                print_progress=True,
+            )
+            model_obj = hippylib_sampler_from_model(model_name, 42)
+        else:
+            subspace_detect_data = generate_full_Jacobian_data(
+                sampler_wrapper=model_obj, N_samples=N_encodec_computation
+            )
+            # print("loaded_results",susbpace_detect_data)
+            # input_output_reduced_dim_percentage_pairs  = [0.999, 0.99,0.95,0.9 ] #(2145, 10), (2145,25)
         print("Computing derivative informed encodecs")
+        gc.collect()
         encodec_dict = generate_derivative_informed_encoder_decoders_from_full_jacobians(
             key=key,
             prior_precision=model_obj.precision,
-            noise_variance=2e-3,
-            full_jacobian_data=subspace_detect_data["Jacobians"],  # max_input_dimension=500, max_output_dimension=100)
+            noise_precision=model_obj.noise_precision,
+            full_jacobian_data=subspace_detect_data["Jacobians"],
             input_output_dim_percentage_pairs=input_output_dim_percentage_pairs,
             input_output_dim_pairs=input_output_dim_pairs,
             input_dims=input_dims,
             output_dims=output_dims,
         )
+
     elif dimension_reduction_type == "moment_based":
         print("Generating data for moment-based subspace detection")
         if not input_dims:
-            subspace_detect_data = generate_output_data(
-                sampler_wrapper=model_obj, N_samples=N_encodec_computation
-            )  # model_obj PRNG key??
+            if N_multiprocessing >= 1:
+                del model_obj
+                gc.collect()
+                subspace_detect_data = multiprocess_generate_hippylib_output_data(
+                    model_name=model_name,
+                    N_samples=N_encodec_computation,
+                    N_processes=N_multiprocessing,
+                    print_progress=True,
+                )
+            else:
+                subspace_detect_data = generate_output_data(sampler_wrapper=model_obj, N_samples=N_encodec_computation)
         encodec_dict = generate_moment_based_encoder_decoders(
             key=key,
             input_covariance_matrix=np.linalg.inv(model_obj.precision) if output_dims is None else None,
@@ -284,6 +328,7 @@ def generate_latent_data_for_dino_training(
             input_dims=input_dims,
             output_dims=output_dims,
         )
+    gc.collect()
 
     if save_path:
         if not (input_dims and dimension_reduction_type == "moment_based"):
@@ -291,16 +336,42 @@ def generate_latent_data_for_dino_training(
             Path(save_path, dimension_reduction_type).mkdir(parents=True, exist_ok=True)
             path = Path(save_path, dimension_reduction_type, "subpace_detect_data.hkl")
             dump_pytree_to_disk(subspace_detect_data, path)
-            print(f"Checking saved correctly to {path}")
-            susbpace_detect_data = load_pytree_from_disk(path)
+            # print(f"Checking saved correctly to {path}")
+            # subspace_detect_data = load_pytree_from_disk(path)
+            for k in subspace_detect_data.keys():
+                try:
+                    print(k, subspace_detect_data[k].device())
+                except:
+                    pass
 
         print("Dumping this data to disk")
-        path = Path(save_path, dimension_reduction_type, "encodec_dict.hkl")  # include type of encodec
+        path = Path(save_path, dimension_reduction_type, "encodec_dict.hkl")
         dump_pytree_to_disk(encodec_dict, path)
-        print(f"Checking saved correctly to {path}")
+        # print(f"Checking saved correctly to {path}")
         encodec_dict = load_pytree_from_disk(path)
 
+        for REDUCED_DIMS in input_output_dim_pairs:
+            encodec_dict_i = encodec_dict[REDUCED_DIMS]
+            import jax.numpy as jnp
+
+            print(
+                jnp.linalg.norm(
+                    encodec_dict_i["input"]["encoder"].T @ encodec_dict_i["input"]["decoder"]
+                    - jnp.eye(encodec_dict_i["input"]["encoder"].shape[1])
+                )
+                / jnp.linalg.norm(jnp.eye(encodec_dict_i["input"]["encoder"].shape[1]))
+            )
+            print(
+                jnp.linalg.norm(
+                    encodec_dict_i["output"]["encoder"].T @ encodec_dict_i["output"]["decoder"]
+                    - jnp.eye(encodec_dict_i["output"]["encoder"].shape[1])
+                )
+                / jnp.linalg.norm(jnp.eye(encodec_dict_i["output"]["encoder"].shape[1]))
+            )
+
     if not (input_dims and dimension_reduction_type == "moment_based"):
+        from bayesflux.encoding import encode_input_output_Jacobian_data
+
         print("Encoding subspace detection training samples")
         reduced_subspace_detect_data_dicts = dict()
         for reduced_dims_tuple_i, encodec_dict_i in encodec_dict.items():
@@ -333,30 +404,51 @@ def generate_latent_data_for_dino_training(
             dump_pytree_to_disk(
                 reduced_subspace_detect_data_dicts, path
             )  # name should reflect apparoach to dim reduction
-            print(f"\tChecking saved correctly to {path}")
-            reduced_subspace_detect_data_dicts = load_pytree_from_disk(path)
+            # print(f"\tChecking saved correctly to {path}")
+            # reduced_subspace_detect_data_dicts = load_pytree_from_disk(path)
 
     reduced_all_data = dict()
     print("Getting encoders from gpu, placing back on cpu")
     encodec_dict_on_cpu = device_get_pytree(encodec_dict)
-    print("Generating remaining training data in encodec latent space")
+    del encodec_dict, reduced_subspace_detect_data_dicts
+    gc.collect()
+    subspace_time = time.time() - subspace_start
+    print("Total subspace computation computation time", subspace_time)
+    print(
+        "Generating remaining training data in encodec latent space, for each of the N encodecs, the same samples will be generated (with different dimension reductions)."
+    )
     for reduced_dims_tuple_i, encodec_dict_i in encodec_dict_on_cpu.items():
         print("...input/output reduced dimensions:", reduced_dims_tuple_i)
-        reduced_all_data[reduced_dims_tuple_i] = generate_reduced_training_data(
-            sampler_wrapper=model_obj,  # set the hippylib PRNG key!!!
-            N_samples=N_reduced_samples,
-            input_encoder=encodec_dict_i["input"].get("encoder"),
-            output_encoder=encodec_dict_i["output"].get("encoder"),
-            input_decoder=encodec_dict_i["input"].get("decoder"),
-            reduce_input_before=reduce_input_before,
-        )
+        if N_multiprocessing >= 1:
+            print(f"Using random seeds offset by {N_multiprocessing} from previous random seed")
+            reduced_all_data[reduced_dims_tuple_i] = multiprocess_generate_reduced_hippylib_training_data(
+                model_name,
+                N_samples=N_reduced_samples,
+                N_processes=N_multiprocessing,
+                input_encoder=encodec_dict_i["input"].get("encoder"),
+                output_encoder=encodec_dict_i["output"].get(
+                    "encoder"
+                ),  # np.identity(subspace_detect_data["outputs"].shape[1]), #
+                input_decoder=encodec_dict_i["input"].get("decoder"),
+                random_seed_offset=N_multiprocessing,
+                reduce_input_before=reduce_input_before,
+            )
+        else:
+            reduced_all_data[reduced_dims_tuple_i] = generate_reduced_training_data(
+                sampler_wrapper=model_obj,
+                N_samples=N_reduced_samples,
+                input_encoder=encodec_dict_i["input"].get("encoder"),
+                output_encoder=encodec_dict_i["output"].get(
+                    "encoder"
+                ),  # np.identity(subspace_detect_data["outputs"].shape[1]), #
+                input_decoder=encodec_dict_i["input"].get("decoder"),
+                reduce_input_before=reduce_input_before,
+            )
         reduced_all_data[reduced_dims_tuple_i]["encodec"] = encodec_dict_i
-
         if dimension_reduction_type == "derivative_informed":
             print("\tjacobian encoding time", reduced_all_data[reduced_dims_tuple_i]["Jacobian_encoding_time"])
-            if encodec_dict_i["input"].get("decoder"):
+            if encodec_dict_i["input"].get("decoder") is not None:
                 print("\tjacobian decoding time", reduced_all_data[reduced_dims_tuple_i]["Jacobian_decoding_time"])
-
     if save_path:
         print("\tDumping latent train, test, val data to disk; returning test_train_val dictionary.")
     reduced_train_test_val = dict()
@@ -371,7 +463,7 @@ def generate_latent_data_for_dino_training(
             "val": dict(),
         }
 
-        for data_key in ["encoded_Jacobians", "encoded_inputs", "encoded_outputs"]:
+        for data_key in ["encoded_Jacobians", "encoded_inputs", "encoded_outputs"]:  # outputs
             data_values = reduced_data_i.get(data_key)
             if data_values is not None:
                 reduced_train_test_val[reduced_dims_tuple_i]["train"][data_key] = data_values[:N_train_max]
@@ -387,7 +479,7 @@ def generate_latent_data_for_dino_training(
 
                     # saves different sets of training data for easy loading from file
                     for N_train in N_trains:
-                        jnp.save(
+                        np.save(
                             Path(
                                 save_path,
                                 dimension_reduction_type,
@@ -396,11 +488,11 @@ def generate_latent_data_for_dino_training(
                             ),
                             data_values[0:N_train],
                         )
-                    jnp.save(
+                    np.save(
                         Path(save_path, dimension_reduction_type, "testing", f"{reduced_dims_tuple_i}_{data_key}.npy"),
                         data_values[N_train_max:val_start_idx],
                     )
-                    jnp.save(
+                    np.save(
                         Path(
                             save_path, dimension_reduction_type, "validation", f"{reduced_dims_tuple_i}_{data_key}.npy"
                         ),

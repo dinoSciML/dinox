@@ -5,10 +5,10 @@ build-backend = "uv_build"
 [project]
 name = "dinox"
 version = "0.4.0"
-description = "Derivative Informed Neural Operators in JAX"
+description = "Derivative Informed Neural Operators in JAX and Equinox"
 readme = "README.md"
 license = { file = "LICENSE" }
-requires-python = ">=3.8"
+requires-python = ">=3.9"
 authors = [
   { name = "Joshua Chen", email = "joshuawchen@icloud.com" },
   { name = "Michael Brennan", email = "mcbrenn@mit.edu" },
@@ -18,9 +18,9 @@ dependencies = [
     "jax",
     "jaxlib",
     "jaxtyping",
-    "bayesflux>=0.5.0",
+    "bayesflux>=0.7.4",
     "equinox",
-    "hickle"
+    "hickle>=5.0.3"
 ]
 
 [project.optional-dependencies]
@@ -33,7 +33,6 @@ dev = [
 ]
 cupy = [
     "cupy-cuda117>=10.0.0,<11.0.0",  # If your system uses CUDA 11.7; for others use e.g., cupy-cuda115, cupy-cuda118, etc.
-    # bayesflux: for probabilistic computations or Bayesian 
 ]
 
 [tool.black]
@@ -49,7 +48,3 @@ Repository = "https://github.com/joshuawchen/BayesFlux"
 [tool.uv_build]
 src_dir = "src"
 
-readme = "README.md"
-
-[tool.poetry.dependencies]
-python = "^3.9"
