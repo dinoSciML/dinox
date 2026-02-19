@@ -62,6 +62,7 @@ def __create_permuter(N: int, cp_random_seed: int = None) -> Callable:
         return tuple(dlpack2jax(cp.from_dlpack(jax2dlpack(arr))[perm]) for arr in arrays)
 
     return permute_arrays
+
     # indices = jnp.arange(N)
     # # @jax.jit
     # # def permute_arrays(key, *arrays: Iterable[jax_Array]) -> Tuple[jax_Array, ...]:
@@ -81,7 +82,14 @@ def __create_permuter(N: int, cp_random_seed: int = None) -> Callable:
 
     # return permute_arrays
 
-
+renaming_dict = {
+    "encoded_inputs": "X",
+    "encoded_outputs": "fX",
+    "inputs": "X",
+    "outputs":"fX",
+    "encoded_Jacobians": "dfXdX",
+}
+    
 def __create_slicer(*, batch_size: int, num_input_outputs: int) -> Callable:
     """
     Returns a slicing function that extracts a batch from each array using a fixed batch_size and start index.
@@ -275,21 +283,34 @@ def load_encoded_data_train_and_test_dino(
     RANDOM_PERMUTATIONS_SEED: int,
     N_VAL: int = 2500,
 ) -> Tuple[EquinoxMLPWrapper, Dict[str, Any]]:
-    training_data_keys = {  # harded coded
-        "L2": ("encoded_inputs", "encoded_outputs"),
-        "H1": ("encoded_inputs", "encoded_outputs", "encoded_Jacobians"),
-    }.get(LOSS_NAME)
+    import ast
+    from pathlib import Path
+
+    training_dir = Path(data_path, "training")
+
+    # grab one npy file to inspect tuple
+    example_file = next(training_dir.glob("*.npy"))
+
+    tuple_str = example_file.name.split(")")[0] + ")"
+    input_reduced_dim, output_reduced_dim = ast.literal_eval(tuple_str)
+
+    input_key = "encoded_inputs" if input_reduced_dim is not None else "inputs"
+    output_key = "encoded_outputs" if output_reduced_dim is not None else "outputs"
+
+    if LOSS_NAME == "L2":
+        training_data_keys = (input_key, output_key)
+    elif LOSS_NAME == "H1":
+        training_data_keys = (input_key, output_key, "encoded_Jacobians")
+    else:
+        raise ValueError(f"Unknown LOSS_NAME: {LOSS_NAME}")
     if training_data_keys is None:
         raise Exception("Not currently implemented")
-    renaming_dict = {
-        "encoded_inputs": "X",
-        "encoded_outputs": "fX",
-        "encoded_Jacobians": "dfXdX",
-    }
+
     train_val_test = load_encoded_training_validation_and_testing_data(
         data_path=data_path,
         REDUCED_DIMS=REDUCED_DIMS,
         training_data_keys=training_data_keys,
+        test_data_keys=(input_key, output_key, "encoded_Jacobians"),
         renaming_dict=renaming_dict,
         N_TRAIN=N_TRAIN,
         N_VAL=N_VAL,
@@ -322,8 +343,7 @@ def train_and_test_dino(
     testing_data_keys: Tuple[str, ...] = ("X", "fX", "dfXdX"),
     LOSS_NAME: str = "H1",
 ) -> Tuple[eqxModule, Dict[str, Any]]:
-    # Place on GPU!
-
+    # Place on GPU
     if not all(list(arr.devices())[0].platform == "gpu" for arr in train_val_test["train"].values()):
         print("Training data did not yet reside on GPU. Placing on GPU.")
         training_data = tuple(jax_device_put(train_val_test["train"][k]) for k in training_data_keys)
@@ -342,7 +362,6 @@ def train_and_test_dino(
 
     # Prepare for training
     N_TRAIN = training_data[0].shape[0]
-    print("N_train", N_TRAIN)
     n_train_batches = check_batch_size_validity(data_iterable=training_data, batch_size=BATCH_SIZE)
     N_MAX_OUTER_ITERS = N_MAX_EPOCHS // N_EPOCHS_BETWEEN_TEST
     num_train_steps = N_MAX_EPOCHS * n_train_batches

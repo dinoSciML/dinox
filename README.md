@@ -1,29 +1,144 @@
 # dinox
-Implementation of **Derivative Informed Neural Operators** in `jax`. Build for fast performance in single GPU environments-- and specifically where _all-data-can-fit-in-gpu-memory_. In the future, this code will be generalized for the setting in which one has multiple GPUs and would like to take advantage. It will also be generalized to account for big-data (where not all samples can fit in gpu or cpu memory) -- Probably via memmapping. 
 
-# Installation
-Create a brand new environment. Use `mamba` in place of `conda` if you can. (i.e. run the first line below). The assumption is that conda is already installed on your machine.
+`dinox` is a `JAX` implementation of Reduced Basis Derivative Informed Neural Operators, built for high performance in single-GPU environments where all training data fits in GPU memory.
 
-If one has access to an NVIDIA gpu, use gpu_environment.yml, otherwise use cpu_environment.yml, which will install the dependencies for the code, but the code will not be as performant, since the library is a GPU-forward library.
+The library is designed primarily for PDE learning workflows based on:
+
+- `FEniCS 2019.1`
+- Jacobians computed via `hippylib`
+- Subspace methods provided by `bayesflux`
+
+---
+
+## Overview
+
+`dinox` provides:
+
+- Reduced basis neural operator architectures
+- Derivative-informed training using PDE Jacobians
+- GPU-accelerated implementations in `JAX` and `Equinox`
+- Integration with FEniCS-discretized PDEs
+
+---
+
+## Important: FEniCS & Hippylib Environment Required
+
+`dinox` depends on `bayesflux[hippylib]`, which requires:
+
+- hippylib
+- FEniCS 2019.1
+
+`FEniCS` has system-level dependencies and cannot be installed via pip alone.
+
+You must first create a conda environment with FEniCS 2019.1 before installing dinox.
+
+---
+
+## Installation
+
+### Prerequisites
+
+- NVIDIA driver >= 525 (check with `nvidia-smi`)
+- conda or mamba
+
+> **Note on CUDA libraries:** You do **not** need to install CUDA Toolkit, cuDNN, or cuSPARSE via conda or your system package manager. The pip wheels for JAX and CuPy bundle their own CUDA 12 runtime libraries. Installing system CUDA alongside pip-bundled CUDA is the most common source of GPU detection failures.
+
+### Step 1 — Create a FEniCS 2019.1 environment
+
+```bash
+conda create -n fenics-2019.1_env -c conda-forge fenics==2019.1.0 python=3.11
+conda activate fenics-2019.1_env
 ```
-conda install -c conda-forge mamba
 
-mamba env create -f <gpu, cpu>_environment.yml
-poetry install
+### Step 2 — Fix `LD_LIBRARY_PATH` (critical for GPU)
+
+A system-level or conda-set `LD_LIBRARY_PATH` pointing to a CUDA installation will conflict with the CUDA libraries bundled in the JAX and CuPy pip wheels, causing errors like `Unable to load cuSPARSE`. This fixes this issue
+
+```bash 
+unset LD_LIBRARY_PATH
 ```
-# Running dinox
+
+### Step 3 — Install GPU-enabled JAX
+
+```bash
+pip install "jax[cuda12]" cupy-cuda12x
 ```
-python -m dinox -network_name "<name_to_save_network_as>" -data_dir "<location_of_jacobian_enriched_training_data>"
+
+> JAX versions 0.6.1 and 0.6.2 have a [known cuSPARSE loading bug](https://github.com/jax-ml/jax/issues/30050). Version 0.6.0 is the recommended stable release for CUDA 12.
+
+### Step 4 — Install dinox
+
+```bash
+# With CuPy GPU support (recommended)
+pip install dinox[cupy]
+
+# Without CuPy
+pip install dinox
 ```
-# Examples
 
+### Step 5 — Verify GPU
 
-# Note, the codebase needs to be generalized to work generally on CPUs. It also does not fully work on Apple Silicon (jax-metal has limitations)
-# Notes on why we require these packages:
-- `cupy` - for rapid permuting of data on GPUs
-- `kvikio` - for interfacing with NVIDIA GPU Direct Storage (GDS) for loading data directly to GPU, skipping the CPU
-- `equinox` - Dinox is primarily build off of equinox and is therefore fully jax compatible. Most of dinox are simply lightweight utilities for dealing with mean H1 loss training of nerual networks with data that is enriched with Jacobians ($`X, Y, dY/dX`$)
-- `optax` - we use optax for optimization, though any neural network optimization library can be used. We make choices primarily for speed.
+```bash
+python -c "import jax; print('JAX devices:', jax.devices())"
+python -c "import cupy; print('CuPy GPU count:', cupy.cuda.runtime.getDeviceCount())"
+```
 
-## Need to generalize this to figure out the actual minimal requirements in terms of cuda, jax versions, and kvikio. The main tricky parts are which versions of jax/kvikio/cudatoolkit/cuda-nvcc/cudnn work together well. For now, only want to restrict to python>=3.10
-## Let me know if anyone has depenency resolution issues.
+You should see your NVIDIA GPU listed. If JAX shows only `CpuDevice`, check that `LD_LIBRARY_PATH` is unset (see Step 2).
+
+---
+
+## GPU Support
+
+- Designed for single-GPU workflows where all data fits in GPU memory
+- Requires CUDA 12-enabled JAX (`pip install "jax[cuda12]"`) — the pip wheel bundles its own CUDA runtime
+- Optional CuPy arrays for GPU operations via `dinox[cupy]`
+- Without GPU, CPU fallback is automatic
+
+---
+
+## Development
+
+```bash
+conda create -n fenics-2019.1_env -c conda-forge fenics==2019.1.0 python=3.11
+conda activate fenics-2019.1_env
+unset LD_LIBRARY_PATH  # or use the permanent conda hook above
+
+pip install "jax[cuda12]==0.6.0"
+pip install -e ".[dev]"
+```
+
+This installs:
+
+- dinox (editable)
+- development tools (pytest, black, flake8, isort)
+- bayesflux[hippylib]
+- hippylib
+- all required JAX dependencies
+
+---
+
+## Requirements
+
+- Python >= 3.9
+- FEniCS 2019.1 (via conda)
+- JAX >= 0.4.30 (for GPU: `pip install "jax[cuda12]==0.6.0"`)
+- NVIDIA driver >= 525 (for GPU)
+- Optional: CuPy for GPU array operations (`pip install dinox[cupy]`)
+
+---
+
+## Troubleshooting
+
+| Problem | Solution |
+|---|---|
+| `Unable to load cuSPARSE` | `unset LD_LIBRARY_PATH` before running Python |
+| JAX shows only `CpuDevice` | Ensure `jax[cuda12]` was installed (not just `jax`) and `LD_LIBRARY_PATH` is unset |
+| `nvidia-smi` not found | Install or update NVIDIA driver (>= 525) |
+| JAX/CuPy CUDA version conflict | Do **not** `conda install cudatoolkit` — let pip wheels provide CUDA |
+
+---
+
+## Repository
+
+- Homepage: https://github.com/dinoSciML/dinox
+- Repository: https://github.com/dinoSciML/dinox

@@ -41,7 +41,7 @@ def device_get_pytree(pytree: PyTree) -> PyTree:
 def add_squared_norms_of_each_entry(
     data_dict: Dict[str, JAXArrayLike],
 ) -> Dict[str, JAXArrayLike]:
-    device = data_dict[list(data_dict.keys())[0]].device()
+    device = next(iter(data_dict[list(data_dict.keys())[0]].devices()))
     if device in jax_devices("cpu"):
         from .losses import __cpu_vectorized_squared_norm
 

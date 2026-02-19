@@ -4,7 +4,7 @@ build-backend = "uv_build"
 
 [project]
 name = "dinox"
-version = "0.4.0"
+version = "0.5"
 description = "Derivative Informed Neural Operators in JAX and Equinox"
 readme = "README.md"
 license = { file = "LICENSE" }
@@ -12,27 +12,30 @@ requires-python = ">=3.9"
 authors = [
   { name = "Joshua Chen", email = "joshuawchen@icloud.com" },
   { name = "Michael Brennan", email = "mcbrenn@mit.edu" },
+  { name = "Lianghao Cao", email = "lianghao@caltech.edu" },
   { name = "Thomas O'Leary-Roseberry", email = "tom.olearyroseberry@utexas.edu" }
 ]
 dependencies = [
-    "jax",
-    "jaxlib",
+    "jax>=0.4.30",
+    "jaxlib>=0.4.30",
     "jaxtyping",
-    "bayesflux>=0.7.4",
+    "optax>=0.2.3",
+    "bayesflux[hippylib]>=0.8",
     "equinox",
-    "hickle>=5.0.3"
+    "hickle>=5.0.3",
+    "pydantic"
 ]
 
 [project.optional-dependencies]
+cupy = [
+    "cupy-cuda12x"
+]
 dev = [
     "pytest",
     "black",
     "isort",
     "flake8",
     "flake8-pyproject"
-]
-cupy = [
-    "cupy-cuda117>=10.0.0,<11.0.0",  # If your system uses CUDA 11.7; for others use e.g., cupy-cuda115, cupy-cuda118, etc.
 ]
 
 [tool.black]
@@ -42,9 +45,8 @@ line-length = 120
 max-line-length = 120
 
 [project.urls]
-Homepage = "https://github.com/joshuawchen/BayesFlux"
-Repository = "https://github.com/joshuawchen/BayesFlux"
+Homepage = "https://github.com/dinoSciML/dinox"
+Repository = "https://github.com/dinoSciML/dinox"
 
 [tool.uv_build]
 src_dir = "src"
-
