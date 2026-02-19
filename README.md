@@ -21,6 +21,12 @@ The library is designed primarily for PDE learning workflows based on:
 
 ---
 
+## Getting Started
+
+See the [hyperelasticity tutorial](examples/hyperelasticity/DINO_Tutorial.ipynb) for a complete walkthrough of the RB-DINO pipeline: problem setup, data generation, training with L2 vs H1 loss, and surrogate evaluation.
+
+---
+
 ## Important: FEniCS & Hippylib Environment Required
 
 `dinox` depends on `bayesflux[hippylib]`, which requires:
@@ -56,6 +62,28 @@ A system-level or conda-set `LD_LIBRARY_PATH` pointing to a CUDA installation wi
 
 ```bash
 unset LD_LIBRARY_PATH
+```
+
+For a permanent fix, create conda activate/deactivate hooks:
+
+```bash
+mkdir -p $CONDA_PREFIX/etc/conda/{activate,deactivate}.d
+
+cat > $CONDA_PREFIX/etc/conda/activate.d/unset_ld_library_path.sh << 'EOF'
+#!/bin/bash
+export _OLD_LD_LIBRARY_PATH="$LD_LIBRARY_PATH"
+unset LD_LIBRARY_PATH
+EOF
+
+cat > $CONDA_PREFIX/etc/conda/deactivate.d/restore_ld_library_path.sh << 'EOF'
+#!/bin/bash
+if [ -n "$_OLD_LD_LIBRARY_PATH" ]; then
+    export LD_LIBRARY_PATH="$_OLD_LD_LIBRARY_PATH"
+    unset _OLD_LD_LIBRARY_PATH
+else
+    unset LD_LIBRARY_PATH
+fi
+EOF
 ```
 
 ### Step 3 — Install GPU-enabled JAX
