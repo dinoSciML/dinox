@@ -201,7 +201,7 @@ def generate_derivative_informed_encoder_decoders_from_full_jacobians(
         print("\t\tPercentages:", input_output_dim_percentage_pairs)
         print("\t\tDims:", input_output_dim_pairs)
 
-        #TODO remove eventually
+        # TODO remove eventually
         # hp_eigs_input, hp_input_encoder, hp_input_decoder = hippylib_active_subspace(full_jacobian_data, noise_variance, prior, 2145, 10)
 
         # eigs_input = encoder_decoders_dict['input']['eigenvalues']
@@ -355,19 +355,21 @@ def generate_latent_data_for_dino_training(
             import jax.numpy as jnp
 
             print(
-                "\t\t", jnp.linalg.norm(
+                "\t\t",
+                jnp.linalg.norm(
                     encodec_dict_i["input"]["encoder"].T @ encodec_dict_i["input"]["decoder"]
                     - jnp.eye(encodec_dict_i["input"]["encoder"].shape[1])
                 )
-                / jnp.linalg.norm(jnp.eye(encodec_dict_i["input"]["encoder"].shape[1]))
+                / jnp.linalg.norm(jnp.eye(encodec_dict_i["input"]["encoder"].shape[1])),
             )
             if encodec_dict_i["output"].get("encoder"):
                 print(
-                    "\t\t", jnp.linalg.norm(
+                    "\t\t",
+                    jnp.linalg.norm(
                         encodec_dict_i["output"]["encoder"].T @ encodec_dict_i["output"]["decoder"]
                         - jnp.eye(encodec_dict_i["output"]["encoder"].shape[1])
                     )
-                    / jnp.linalg.norm(jnp.eye(encodec_dict_i["output"]["encoder"].shape[1]))
+                    / jnp.linalg.norm(jnp.eye(encodec_dict_i["output"]["encoder"].shape[1])),
                 )
 
     if not (input_dims and dimension_reduction_type == "moment_based"):
@@ -465,7 +467,7 @@ def generate_latent_data_for_dino_training(
             "val": dict(),
         }
 
-        for data_key in ["encoded_Jacobians", "encoded_inputs", "encoded_outputs", 'inputs', 'outputs']:
+        for data_key in ["encoded_Jacobians", "encoded_inputs", "encoded_outputs", "inputs", "outputs"]:
             data_values = reduced_data_i.get(data_key)
             if data_values is not None:
                 reduced_train_test_val[reduced_dims_tuple_i]["train"][data_key] = data_values[:N_train_max]

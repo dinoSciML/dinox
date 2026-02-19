@@ -52,19 +52,17 @@ conda activate fenics-2019.1_env
 
 ### Step 2 — Fix `LD_LIBRARY_PATH` (critical for GPU)
 
-A system-level or conda-set `LD_LIBRARY_PATH` pointing to a CUDA installation will conflict with the CUDA libraries bundled in the JAX and CuPy pip wheels, causing errors like `Unable to load cuSPARSE`. This fixes this issue
+A system-level or conda-set `LD_LIBRARY_PATH` pointing to a CUDA installation will conflict with the CUDA libraries bundled in the JAX and CuPy pip wheels, causing errors like `Unable to load cuSPARSE`.
 
-```bash 
+```bash
 unset LD_LIBRARY_PATH
 ```
 
 ### Step 3 — Install GPU-enabled JAX
 
 ```bash
-pip install "jax[cuda12]" cupy-cuda12x
+pip install "jax[cuda12]" cupy-cuda12x nvidia-curand-cu12
 ```
-
-> JAX versions 0.6.1 and 0.6.2 have a [known cuSPARSE loading bug](https://github.com/jax-ml/jax/issues/30050). Version 0.6.0 is the recommended stable release for CUDA 12.
 
 ### Step 4 — Install dinox
 
@@ -101,9 +99,9 @@ You should see your NVIDIA GPU listed. If JAX shows only `CpuDevice`, check that
 ```bash
 conda create -n fenics-2019.1_env -c conda-forge fenics==2019.1.0 python=3.11
 conda activate fenics-2019.1_env
-unset LD_LIBRARY_PATH  # or use the permanent conda hook above
 
-pip install "jax[cuda12]==0.6.0"
+pip install "jax[cuda12]" cupy-cuda12x nvidia-curand-cu12
+unset LD_LIBRARY_PATH  # or use the permanent conda hook above
 pip install -e ".[dev]"
 ```
 
@@ -119,9 +117,9 @@ This installs:
 
 ## Requirements
 
-- Python >= 3.9
+- Python >= 3.10
 - FEniCS 2019.1 (via conda)
-- JAX >= 0.4.30 (for GPU: `pip install "jax[cuda12]==0.6.0"`)
+- JAX >= 0.7.0 (for GPU: `pip install "jax[cuda12]"`)
 - NVIDIA driver >= 525 (for GPU)
 - Optional: CuPy for GPU array operations (`pip install dinox[cupy]`)
 
@@ -132,6 +130,7 @@ This installs:
 | Problem | Solution |
 |---|---|
 | `Unable to load cuSPARSE` | `unset LD_LIBRARY_PATH` before running Python |
+| `No such file: libcurand.so` | `pip install nvidia-curand-cu12` |
 | JAX shows only `CpuDevice` | Ensure `jax[cuda12]` was installed (not just `jax`) and `LD_LIBRARY_PATH` is unset |
 | `nvidia-smi` not found | Install or update NVIDIA driver (>= 525) |
 | JAX/CuPy CUDA version conflict | Do **not** `conda install cudatoolkit` — let pip wheels provide CUDA |

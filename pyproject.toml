@@ -8,7 +8,7 @@ version = "0.5"
 description = "Derivative Informed Neural Operators in JAX and Equinox"
 readme = "README.md"
 license = { file = "LICENSE" }
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 authors = [
   { name = "Joshua Chen", email = "joshuawchen@icloud.com" },
   { name = "Michael Brennan", email = "mcbrenn@mit.edu" },
@@ -16,8 +16,8 @@ authors = [
   { name = "Thomas O'Leary-Roseberry", email = "tom.olearyroseberry@utexas.edu" }
 ]
 dependencies = [
-    "jax>=0.4.30",
-    "jaxlib>=0.4.30",
+    "jax>=0.7.0",
+    "jaxlib>=0.7.0",
     "jaxtyping",
     "optax>=0.2.3",
     "bayesflux[hippylib]>=0.8",
@@ -28,7 +28,8 @@ dependencies = [
 
 [project.optional-dependencies]
 cupy = [
-    "cupy-cuda12x"
+    "cupy-cuda12x",
+    "nvidia-curand-cu12"
 ]
 dev = [
     "pytest",

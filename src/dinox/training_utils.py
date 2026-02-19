@@ -50,8 +50,8 @@ def __create_permuter(N: int, cp_random_seed: int = None) -> Callable:
     """
     import cupy as cp
     from jax.dlpack import from_dlpack as dlpack2jax
-    from jax.dlpack import to_dlpack as jax2dlpack
 
+    dlpack2cp = cp.from_dlpack
     indices = cp.arange(N)
     if cp_random_seed is not None:
         cp.random.seed(cp_random_seed)
@@ -59,7 +59,7 @@ def __create_permuter(N: int, cp_random_seed: int = None) -> Callable:
     def permute_arrays(*arrays: Iterable[jax_Array]) -> Tuple[jax_Array, ...]:
         perm = cp.random.permutation(indices)
         # Use DLPack to transfer data between CuPy and JAX and apply permutation
-        return tuple(dlpack2jax(cp.from_dlpack(jax2dlpack(arr))[perm]) for arr in arrays)
+        return tuple(dlpack2jax(dlpack2cp(arr)[perm]) for arr in arrays)
 
     return permute_arrays
 
@@ -82,14 +82,16 @@ def __create_permuter(N: int, cp_random_seed: int = None) -> Callable:
 
     # return permute_arrays
 
+
 renaming_dict = {
     "encoded_inputs": "X",
     "encoded_outputs": "fX",
     "inputs": "X",
-    "outputs":"fX",
+    "outputs": "fX",
     "encoded_Jacobians": "dfXdX",
 }
-    
+
+
 def __create_slicer(*, batch_size: int, num_input_outputs: int) -> Callable:
     """
     Returns a slicing function that extracts a batch from each array using a fixed batch_size and start index.
