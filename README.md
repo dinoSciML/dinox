@@ -23,7 +23,7 @@ The library is designed primarily for PDE learning workflows based on:
 
 ## Getting Started
 
-See the [hyperelasticity tutorial]([examples/DINO_Tutorial.ipynb](https://github.com/dinoSciML/dinox/blob/main/examples/DINO_Tutorial.ipynb)) for a complete walkthrough of the RB-DINO pipeline: problem setup, data generation, training with L2 vs H1 loss, and surrogate evaluation.
+See the [hyperelasticity tutorial](https://github.com/dinoSciML/dinox/blob/main/examples/DINO_Tutorial.ipynb) for a complete walkthrough of the RB-DINO pipeline: problem setup, data generation, training with L2 vs H1 loss, and surrogate evaluation.
 
 ---
 
