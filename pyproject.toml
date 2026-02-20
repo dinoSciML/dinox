@@ -4,7 +4,7 @@ build-backend = "uv_build"
 
 [project]
 name = "dinox"
-version = "0.5.4"
+version = "0.5.5"
 description = "Derivative Informed Neural Operators in JAX and Equinox"
 readme = "README.md"
 license = { file = "LICENSE" }
