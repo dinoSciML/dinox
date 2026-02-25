@@ -25,7 +25,7 @@ The library is designed primarily for PDE learning workflows based on:
 
 See the [hyperelasticity tutorial](https://github.com/dinoSciML/dinox/blob/main/examples/DINO_Tutorial.ipynb) for a complete walkthrough of the RB-DINO pipeline: problem setup, data generation, training with L2 vs H1 loss, and surrogate evaluation.
 
-**Note on tutorial**: The tutorial requires access to the files in [dinox/examples](https://github.com/dinoSciML/dinox/tree/main/examples). We recommend the user perform these steps:
+**Note on tutorial**: The tutorial requires access to the files in [dinox/examples](https://github.com/dinoSciML/dinox/tree/main/examples). Then one can open `examples/DINO_Tutorial.ipynb` to view the tutorial. We recommend the user perform these steps:
 
 ```bash
 git clone --depth 1 --filter=blob:none --sparse https://github.com/dinoSciML/dinox.git
@@ -33,8 +33,11 @@ cd dinox
 git sparse-checkout set examples
 ```
 
-Then one can open `examples/DINO_Tutorial.ipynb` to view the tutorial.
 ---
+
+## dinox and LazyDINO
+
+`dinox` is central to the repo [lazydino_tutorial](https://github.com/joshuawchen/lazydino_tutorial), which implements a Tutorial for the methods described in the paper: [LazyDINO]()
 
 ## Important: FEniCS & Hippylib Environment Required
 
