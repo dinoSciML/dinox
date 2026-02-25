@@ -37,7 +37,7 @@ git sparse-checkout set examples
 
 ## dinox and LazyDINO
 
-`dinox` is central to the repo [lazydino_tutorial](https://github.com/joshuawchen/lazydino_tutorial), which implements a Tutorial for the methods described in the paper: [LazyDINO]()
+`dinox` is central to the repo [lazydino_tutorial](https://github.com/joshuawchen/lazydino_tutorial), which implements a tutorial jupyter notebook for the methods described in the paper: [LazyDINO]()
 
 ## Important: FEniCS & Hippylib Environment Required
 
